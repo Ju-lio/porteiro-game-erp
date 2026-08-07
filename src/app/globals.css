@@ -1,0 +1,278 @@
+@import 'tailwindcss';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PORTEIRO ERP — pergaminho e madeira.
+   A paleta sai da referência: barra lateral em madeira escura, folha de
+   pergaminho no conteúdo, títulos em vermelho-óxido e ouro no que está ativo.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* madeira — a barra lateral e o fundo */
+  --color-breu: #140d0a;
+  --color-madeira-900: #1c120d;
+  --color-madeira-800: #241710;
+  --color-madeira-700: #2f1e15;
+  --color-madeira-600: #3d281c;
+  --color-madeira-500: #513526;
+
+  /* pergaminho — a folha de conteúdo */
+  --color-pergaminho: #ece0c6;
+  --color-pergaminho-2: #e0d1b0;
+  --color-pergaminho-3: #d3c199;
+  --color-borda: #bda879;
+  --color-borda-forte: #a68f5f;
+
+  /* tinta */
+  --color-tinta: #3a2a1c;
+  --color-tinta-fraca: #6d5943;
+  --color-oxido: #a3320f;
+  --color-oxido-claro: #c14a1e;
+
+  /* ouro — só no que está ativo/selecionado */
+  --color-ouro: #e0b23c;
+  --color-ouro-escuro: #b98b1d;
+
+  --color-perigo: #b3261e;
+  --color-sucesso: #4f7a3a;
+
+  --font-display: var(--fonte-display), Georgia, serif;
+  --font-mono: var(--fonte-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 70% 0%, #2a1a12 0%, transparent 60%),
+    var(--color-breu);
+  color: var(--color-tinta);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A textura do pergaminho: manchas sutis, senão a folha fica de plástico. */
+.pergaminho {
+  background-color: var(--color-pergaminho);
+  background-image:
+    radial-gradient(at 15% 10%, rgba(180, 150, 100, 0.16) 0%, transparent 45%),
+    radial-gradient(at 85% 90%, rgba(160, 130, 85, 0.14) 0%, transparent 45%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 20px 50px -20px rgba(0, 0, 0, 0.7);
+}
+
+.madeira {
+  background: linear-gradient(180deg, var(--color-madeira-800) 0%, var(--color-madeira-900) 100%);
+}
+
+.titulo {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--color-oxido);
+  letter-spacing: -0.01em;
+}
+
+.rotulo {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-tinta);
+  margin-bottom: 0.35rem;
+}
+
+/* ── campos ──────────────────────────────────────────────────────────────── */
+.campo {
+  width: 100%;
+  background: var(--color-pergaminho-2);
+  border: 1px solid var(--color-borda);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--color-tinta);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+.campo::placeholder {
+  color: #8b7f6a;
+}
+.campo:focus {
+  outline: none;
+  border-color: var(--color-ouro-escuro);
+  box-shadow: 0 0 0 3px rgba(224, 178, 60, 0.22);
+}
+.campo:disabled {
+  opacity: 0.55;
+}
+select.campo {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d5943' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 1rem;
+  padding-right: 2.2rem;
+}
+textarea.campo {
+  resize: vertical;
+  min-height: 5rem;
+  line-height: 1.6;
+}
+
+/* ── caixas internas (os cards "Mapa" / "Gameplay" da referência) ─────────── */
+.caixa {
+  background: color-mix(in srgb, var(--color-pergaminho-2) 70%, transparent);
+  border: 1px solid var(--color-borda);
+  border-radius: 8px;
+}
+
+/* ── botões ──────────────────────────────────────────────────────────────── */
+.botao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 0.08s,
+    filter 0.12s;
+  white-space: nowrap;
+}
+.botao:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.botao:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.botao-primario {
+  background: linear-gradient(180deg, var(--color-madeira-600), var(--color-madeira-700));
+  border-color: #1a1009;
+  color: var(--color-pergaminho);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+}
+.botao-primario:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+.botao-secundario {
+  background: #4a4642;
+  border-color: #2e2b28;
+  color: #e6e0d6;
+}
+.botao-secundario:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.botao-fantasma {
+  background: transparent;
+  border-color: var(--color-borda-forte);
+  color: var(--color-tinta);
+}
+.botao-fantasma:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-borda) 25%, transparent);
+}
+.botao-perigo {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--color-perigo) 45%, transparent);
+  color: var(--color-perigo);
+}
+.botao-perigo:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-perigo) 12%, transparent);
+}
+
+/* ── tabela ──────────────────────────────────────────────────────────────── */
+.tabela {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+}
+.tabela thead th {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-tinta-fraca);
+  border-bottom: 1px solid var(--color-borda);
+  white-space: nowrap;
+}
+.tabela tbody td {
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-borda) 45%, transparent);
+  vertical-align: middle;
+}
+.tabela tbody tr:hover td {
+  background: color-mix(in srgb, var(--color-borda) 22%, transparent);
+}
+.tabela tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.etiqueta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--color-borda) 40%, transparent);
+  border: 1px solid var(--color-borda);
+  color: var(--color-tinta);
+}
+
+/* ── xadrez de transparência, pra enxergar PNG com alpha ─────────────────── */
+.xadrez {
+  background-image:
+    linear-gradient(45deg, #c4b18c 25%, transparent 25%),
+    linear-gradient(-45deg, #c4b18c 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #c4b18c 75%),
+    linear-gradient(-45deg, transparent 75%, #c4b18c 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-color: #ddceac;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-borda-forte) transparent;
+}
+
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.surgir {
+  animation: surgir 0.16s ease-out;
+}
+
+@keyframes escurecer {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.escurecer {
+  animation: escurecer 0.14s ease-out;
+}
