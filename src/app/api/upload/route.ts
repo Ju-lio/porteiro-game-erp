@@ -62,7 +62,9 @@ export async function POST(req: Request) {
       ? (cfg.max_kb_audio ?? 8192)
       : perfil === 'cenario'
         ? (cfg.max_kb_cenario ?? 4096)
-        : (cfg.max_kb ?? 400),
+        : perfil === 'livre'
+          ? (cfg.max_kb_mapa ?? 20480)
+          : (cfg.max_kb ?? 400),
   );
   if (bytes.length > maxKb * 1024) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { SchemaFaltando } from '@/componentes/ui';
-import { buscar } from '@/lib/consultas';
-import type { AmbienteSonoro, Cenario, Regiao, TipoDocumento } from '@/lib/tipos';
+import { buscar, buscarUnico } from '@/lib/consultas';
+import type { AmbienteSonoro, Asset, Cenario, MapaMundi, Regiao, TipoDocumento } from '@/lib/tipos';
+import { urlAsset } from '@/lib/url';
 import { TelaRegioes } from './Tela';
 
 type ComLigacoes = Regiao & {
@@ -9,7 +10,7 @@ type ComLigacoes = Regiao & {
 };
 
 export default async function Pagina() {
-  const [regioes, cenarios, ambientes, documentos] = await Promise.all([
+  const [regioes, cenarios, ambientes, documentos, mapa, assets] = await Promise.all([
     buscar<ComLigacoes>('regiao', {
       select:
         '*, regiao_ligacao!regiao_ligacao_regiao_id_fkey(destino_id), regiao_documento(tipo_documento_id)',
@@ -18,8 +19,15 @@ export default async function Pagina() {
     buscar<Cenario>('cenario', { ordem: 'nome' }),
     buscar<AmbienteSonoro>('ambiente_sonoro', { ordem: 'nome' }),
     buscar<TipoDocumento>('tipo_documento', { ordem: 'ordem' }),
+    buscarUnico<MapaMundi>('mapa_mundi'),
+    buscar<Asset>('asset'),
   ]);
   if (regioes.semSchema) return <SchemaFaltando />;
+
+  const mapaAsset = assets.linhas.find((a) => a.id === mapa?.asset_id) ?? null;
+
+  const caminhos: Record<string, string> = {};
+  for (const a of assets.linhas) caminhos[a.id] = a.caminho;
 
   return (
     <TelaRegioes
@@ -31,6 +39,8 @@ export default async function Pagina() {
       cenarios={cenarios.linhas}
       ambientes={ambientes.linhas}
       documentos={documentos.linhas}
+      mapaUrl={mapaAsset ? urlAsset(mapaAsset.caminho) : null}
+      caminhos={caminhos}
     />
   );
 }

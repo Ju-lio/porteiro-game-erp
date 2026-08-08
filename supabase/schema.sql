@@ -43,6 +43,7 @@ insert into public.config (chave, valor, descricao) values
   ('max_kb',         '400'::jsonb,  'Tamanho máximo de uma PEÇA de personagem, em KB.'),
   ('max_kb_cenario', '4096'::jsonb, 'Tamanho máximo de uma arte de cenário, em KB (são telas inteiras).'),
   ('max_kb_audio',   '8192'::jsonb, 'Tamanho máximo de um arquivo de áudio, em KB.'),
+  ('max_kb_mapa',    '20480'::jsonb, 'Tamanho máximo da imagem do mapa-múndi, em KB.'),
   ('formatos_imagem','["image/png"]'::jsonb, 'MIME types aceitos para imagem.'),
   ('formatos_audio', '["audio/mpeg","audio/wav"]'::jsonb, 'MIME types aceitos para áudio.')
 on conflict (chave) do nothing;
@@ -211,6 +212,15 @@ create table if not exists public.ambiente_sonoro (
   atualizado_em timestamptz not null default now()
 );
 
+-- A imagem base do mapa-múndi sobre a qual as regiões são posicionadas
+-- (Regiões → Editar mapa). Linha única, como `sombra`.
+create table if not exists public.mapa_mundi (
+  id        int primary key default 1 check (id = 1),
+  asset_id  uuid references public.asset(id),
+  atualizado_em timestamptz not null default now()
+);
+insert into public.mapa_mundi (id) values (1) on conflict (id) do nothing;
+
 create table if not exists public.regiao (
   id        uuid primary key default gen_random_uuid(),
   chave     text not null unique,
@@ -218,9 +228,11 @@ create table if not exists public.regiao (
   descricao text,
   cor       text check (cor is null or cor ~* '^#[0-9a-f]{6}$'),
   clima     text,
-  -- posição no mapa-múndi do jogo
+  -- posição no mapa-múndi do jogo (em % da imagem, definida arrastando em Regiões → Editar mapa)
   pos_x     int,
   pos_y     int,
+  -- ícone que representa a região no mapa-múndi; sem ícone, o editor desenha um pino da `cor`
+  icone_mapa_id uuid references public.asset(id),
   cenario_id        uuid references public.cenario(id) on delete set null,
   ambiente_sonoro_id uuid references public.ambiente_sonoro(id) on delete set null,
   regras_especificas text,
@@ -228,6 +240,8 @@ create table if not exists public.regiao (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+-- Migração de bancos que já rodaram a versão anterior desta tabela.
+alter table public.regiao add column if not exists icone_mapa_id uuid references public.asset(id);
 
 -- Estradas: caminhos possíveis entre regiões.
 create table if not exists public.regiao_ligacao (
@@ -516,7 +530,7 @@ begin
   foreach t in array array[
     'config','paleta','grupo_camada','peca','cenario','som','ambiente_sonoro',
     'regiao','item_bolsa','marca','profissao','regra','cartaz','perfil_geracao',
-    'missao','sombra','ajustes_jogo','tipo_documento'
+    'missao','sombra','ajustes_jogo','tipo_documento','mapa_mundi'
   ] loop
     execute format(
       'drop trigger if exists trg_%1$s_atualizado on public.%1$s;

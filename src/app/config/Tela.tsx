@@ -40,6 +40,7 @@ export function TelaConfig({
   const [maxKb, setMaxKb] = useState(inicial('max_kb', 400));
   const [maxKbCenario, setMaxKbCenario] = useState(inicial('max_kb_cenario', 4096));
   const [maxKbAudio, setMaxKbAudio] = useState(inicial('max_kb_audio', 8192));
+  const [maxKbMapa, setMaxKbMapa] = useState(inicial('max_kb_mapa', 20480));
 
   const [aj, setAj] = useState<Ajustes>(
     ajustes ?? {
@@ -72,6 +73,7 @@ export function TelaConfig({
           { chave: 'max_kb', valor: maxKb },
           { chave: 'max_kb_cenario', valor: maxKbCenario },
           { chave: 'max_kb_audio', valor: maxKbAudio },
+          { chave: 'max_kb_mapa', valor: maxKbMapa },
         ]),
       });
       if (!resposta.ok) return setErro('Falha salvando as travas de arte.');
@@ -141,7 +143,7 @@ export function TelaConfig({
             </Moldura>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-4">
+          <div className="mt-5 grid grid-cols-4 gap-4">
             <Moldura rotulo="Máx. peça (KB)">
               <input
                 type="number"
@@ -164,6 +166,14 @@ export function TelaConfig({
                 className="campo"
                 value={maxKbAudio}
                 onChange={(e) => setMaxKbAudio(Number(e.target.value))}
+              />
+            </Moldura>
+            <Moldura rotulo="Máx. mapa (KB)">
+              <input
+                type="number"
+                className="campo"
+                value={maxKbMapa}
+                onChange={(e) => setMaxKbMapa(Number(e.target.value))}
               />
             </Moldura>
           </div>

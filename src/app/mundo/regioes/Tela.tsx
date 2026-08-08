@@ -1,13 +1,17 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { BookOpen, MapPin, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Eye, Map, MapPin, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/componentes/Modal';
+import { Upload } from '@/componentes/Upload';
 import { Moldura, SeletorCor } from '@/componentes/campos';
 import { Aviso, Cabecalho, Contador, Folha, Vazio } from '@/componentes/ui';
 import { apagar, salvarComLigacoes } from '@/lib/acoes';
 import { paraChave } from '@/lib/campos';
 import type { AmbienteSonoro, Cenario, Regiao, TipoDocumento } from '@/lib/tipos';
+import { urlAsset } from '@/lib/url';
+import { EditorMapa } from './EditorMapa';
+import { VisualizarMapa } from './VisualizarMapa';
 
 // A região é o gargalo do mundo: hoje ela é só um nome no jogo, e tudo que vem
 // depois (facções, leis locais, procurados, clima) pendura aqui.
@@ -23,6 +27,8 @@ type Rascunho = {
   clima: string;
   pos_x: number | null;
   pos_y: number | null;
+  icone_mapa_id: string | null;
+  icone_mapa_url: string | null;
   cenario_id: string | null;
   ambiente_sonoro_id: string | null;
   regras_especificas: string;
@@ -36,14 +42,20 @@ export function TelaRegioes({
   cenarios,
   ambientes,
   documentos,
+  mapaUrl,
+  caminhos,
 }: {
   regioes: Regiao[];
   cenarios: Cenario[];
   ambientes: AmbienteSonoro[];
   documentos: TipoDocumento[];
+  mapaUrl: string | null;
+  caminhos: Record<string, string>;
 }) {
   const [editando, setEditando] = useState<Rascunho | null>(null);
   const [confirmando, setConfirmando] = useState<Regiao | null>(null);
+  const [mapaAberto, setMapaAberto] = useState(false);
+  const [visualizarAberto, setVisualizarAberto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, iniciar] = useTransition();
 
@@ -58,6 +70,8 @@ export function TelaRegioes({
       clima: r?.clima ?? '',
       pos_x: r?.pos_x ?? null,
       pos_y: r?.pos_y ?? null,
+      icone_mapa_id: r?.icone_mapa_id ?? null,
+      icone_mapa_url: r?.icone_mapa_id ? urlAsset(caminhos[r.icone_mapa_id]) : null,
       cenario_id: r?.cenario_id ?? null,
       ambiente_sonoro_id: r?.ambiente_sonoro_id ?? null,
       regras_especificas: r?.regras_especificas ?? '',
@@ -82,6 +96,7 @@ export function TelaRegioes({
           clima: editando.clima || null,
           pos_x: editando.pos_x,
           pos_y: editando.pos_y,
+          icone_mapa_id: editando.icone_mapa_id,
           cenario_id: editando.cenario_id,
           ambiente_sonoro_id: editando.ambiente_sonoro_id,
           regras_especificas: editando.regras_especificas || null,
@@ -116,6 +131,16 @@ export function TelaRegioes({
         acoes={
           <>
             <Contador n={regioes.length} singular="região" plural="regiões" />
+            <button className="botao botao-secundario" onClick={() => setMapaAberto(true)}>
+              <Map size={16} /> Editar mapa
+            </button>
+            <button
+              className="botao botao-secundario"
+              disabled={!mapaUrl}
+              onClick={() => setVisualizarAberto(true)}
+            >
+              <Eye size={16} /> Visualizar mapa
+            </button>
             <button className="botao botao-primario" onClick={() => abrir()}>
               <Plus size={16} /> Nova
             </button>
@@ -153,11 +178,6 @@ export function TelaRegioes({
                 )}
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {r.clima && <span className="etiqueta">{r.clima}</span>}
-                  {r.pos_x !== null && r.pos_y !== null && (
-                    <span className="etiqueta">
-                      {r.pos_x}, {r.pos_y}
-                    </span>
-                  )}
                   {(r.ligacoes?.length ?? 0) > 0 && (
                     <span className="etiqueta">{r.ligacoes?.length} caminho(s)</span>
                   )}
@@ -170,6 +190,24 @@ export function TelaRegioes({
           ))}
         </div>
       )}
+
+      <Modal
+        aberto={mapaAberto}
+        aoFechar={() => setMapaAberto(false)}
+        titulo="Mapa do mundo"
+        descricao="A imagem base do mapa e a posição de cada região sobre ela."
+        largura="xl"
+      >
+        <EditorMapa regioes={regioes} mapaUrl={mapaUrl} caminhos={caminhos} />
+      </Modal>
+
+      <VisualizarMapa
+        aberto={visualizarAberto}
+        aoFechar={() => setVisualizarAberto(false)}
+        regioes={regioes}
+        mapaUrl={mapaUrl}
+        caminhos={caminhos}
+      />
 
       {/* ── o modal segue o layout da referência: Mapa | Gameplay ────────── */}
       <Modal
@@ -228,31 +266,18 @@ export function TelaRegioes({
               <section className="caixa p-5">
                 <h3 className="titulo mb-4 border-b border-borda pb-2 text-[17px]">Mapa</h3>
 
-                <span className="rotulo">Posição no mapa (coordenadas)</span>
-                <div className="mb-4 grid grid-cols-2 gap-3">
-                  <input
-                    type="number"
-                    className="campo"
-                    placeholder="X: 142"
-                    value={editando.pos_x ?? ''}
-                    onChange={(e) =>
-                      setEditando({
-                        ...editando,
-                        pos_x: e.target.value === '' ? null : Number(e.target.value),
-                      })
+                <div className="mb-4">
+                  <Upload
+                    rotulo="Ícone no mapa"
+                    perfil="livre"
+                    urlAtual={editando.icone_mapa_url}
+                    aoEnviar={(id, url) =>
+                      setEditando({ ...editando, icone_mapa_id: id, icone_mapa_url: url })
                     }
-                  />
-                  <input
-                    type="number"
-                    className="campo"
-                    placeholder="Y: 89"
-                    value={editando.pos_y ?? ''}
-                    onChange={(e) =>
-                      setEditando({
-                        ...editando,
-                        pos_y: e.target.value === '' ? null : Number(e.target.value),
-                      })
+                    aoLimpar={() =>
+                      setEditando({ ...editando, icone_mapa_id: null, icone_mapa_url: null })
                     }
+                    ajuda="O pino da região em Regiões → Editar mapa. Sem ícone, usa um pino na cor da região."
                   />
                 </div>
 

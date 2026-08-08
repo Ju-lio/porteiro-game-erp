@@ -121,6 +121,7 @@ export type Regiao = {
   clima: string | null;
   pos_x: number | null;
   pos_y: number | null;
+  icone_mapa_id: string | null;
   cenario_id: string | null;
   ambiente_sonoro_id: string | null;
   regras_especificas: string | null;
@@ -130,6 +131,8 @@ export type Regiao = {
 };
 
 export type Cidade = { id: string; nome: string; regiao_id: string | null };
+
+export type MapaMundi = { asset_id: string | null };
 
 export type FonteCampo = 'nome' | 'cidade' | 'profissao' | 'texto_livre';
 
