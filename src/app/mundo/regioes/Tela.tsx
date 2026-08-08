@@ -191,15 +191,13 @@ export function TelaRegioes({
         </div>
       )}
 
-      <Modal
+      <EditorMapa
         aberto={mapaAberto}
         aoFechar={() => setMapaAberto(false)}
-        titulo="Mapa do mundo"
-        descricao="A imagem base do mapa e a posição de cada região sobre ela."
-        largura="xl"
-      >
-        <EditorMapa regioes={regioes} mapaUrl={mapaUrl} caminhos={caminhos} />
-      </Modal>
+        regioes={regioes}
+        mapaUrl={mapaUrl}
+        caminhos={caminhos}
+      />
 
       <VisualizarMapa
         aberto={visualizarAberto}
