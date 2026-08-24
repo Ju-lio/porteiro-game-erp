@@ -4,12 +4,20 @@ import { useState, useTransition } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/componentes/Modal';
 import { Moldura } from '@/componentes/campos';
+import {
+  EtiquetaRaca,
+  FiltroRacas,
+  RACA_GENERICA,
+  SelecaoRaca,
+  pertenceARaca,
+  racaPadrao,
+} from '@/componentes/FiltroRacas';
 import { PreviewPersonagem } from '@/componentes/PreviewPersonagem';
 import { Upload } from '@/componentes/Upload';
 import { Aviso, Cabecalho, Contador, Folha, Vazio } from '@/componentes/ui';
 import { apagar, salvarComLigacoes } from '@/lib/acoes';
 import { paraChave } from '@/lib/campos';
-import type { GrupoCamada, Paleta, Peca, SubCamada } from '@/lib/tipos';
+import type { GrupoCamada, Paleta, Peca, Raca, SubCamada } from '@/lib/tipos';
 import { urlAsset } from '@/lib/url';
 
 const CAMINHO = '/personagens/pecas';
@@ -20,6 +28,7 @@ type Rascunho = {
   chave: string;
   nome: string;
   genero: string;
+  raca_id: string | null;
   conjunto: string;
   arquetipos: string[];
   ativo: boolean;
@@ -33,21 +42,28 @@ export function TelaPecas({
   grupos,
   pecas,
   paletas,
+  racas,
   canvas,
 }: {
   grupos: GrupoCamada[];
   pecas: Peca[];
   paletas: Paleta[];
+  racas: Raca[];
   canvas: { largura: number; altura: number };
 }) {
   const [grupoAtivo, setGrupoAtivo] = useState<string>(grupos[0]?.id ?? '');
+  const [racaFiltro, setRacaFiltro] = useState(() => racaPadrao(racas));
   const [editando, setEditando] = useState<Rascunho | null>(null);
   const [confirmando, setConfirmando] = useState<Peca | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, iniciar] = useTransition();
 
   const grupo = grupos.find((g) => g.id === grupoAtivo) ?? null;
-  const daLista = pecas.filter((p) => p.grupo_id === grupoAtivo);
+
+  // Dois filtros em série: primeiro a raça (o card lá em cima), depois o grupo
+  // de camada (a aba). Peça sem raça é arte genérica e aparece em qualquer povo.
+  const daRaca = pecas.filter((p) => pertenceARaca(p.raca_id ?? null, racaFiltro));
+  const daLista = daRaca.filter((p) => p.grupo_id === grupoAtivo);
   const grupoDoRascunho = grupos.find((g) => g.id === editando?.grupo_id) ?? null;
 
   function abrir(p?: Peca) {
@@ -67,6 +83,7 @@ export function TelaPecas({
         chave: p.chave,
         nome: p.nome,
         genero: p.genero ?? '',
+        raca_id: p.raca_id ?? null,
         conjunto: p.conjunto ?? '',
         arquetipos: p.arquetipos ?? [],
         ativo: p.ativo,
@@ -79,6 +96,7 @@ export function TelaPecas({
         chave: '',
         nome: '',
         genero: '',
+        raca_id: racaFiltro === RACA_GENERICA ? null : racaFiltro,
         conjunto: '',
         arquetipos: ['generico'],
         ativo: true,
@@ -100,6 +118,7 @@ export function TelaPecas({
           chave: editando.chave,
           nome: editando.nome,
           genero: editando.genero || null,
+          raca_id: editando.raca_id,
           conjunto: editando.conjunto || null,
           arquetipos: editando.arquetipos.length ? editando.arquetipos : ['generico'],
           ativo: editando.ativo,
@@ -129,6 +148,7 @@ export function TelaPecas({
         chave: editando.chave,
         nome: editando.nome,
         genero: null,
+        raca_id: editando.raca_id,
         arquetipos: editando.arquetipos,
         conjunto: editando.conjunto || null,
         ativo: true,
@@ -160,7 +180,7 @@ export function TelaPecas({
         descricao="A arte modular do personagem. Cada peça é uma variante do grupo — cabelo 1, cabelo 2, nariz 3."
         acoes={
           <>
-            <Contador n={pecas.length} singular="peça" plural="peças" />
+            <Contador n={daRaca.length} singular="peça" plural="peças" />
             <button className="botao botao-primario" onClick={() => abrir()} disabled={!grupo}>
               <Plus size={16} /> Nova peça
             </button>
@@ -168,14 +188,21 @@ export function TelaPecas({
         }
       />
 
+      <FiltroRacas
+        racas={racas}
+        valor={racaFiltro}
+        aoMudar={setRacaFiltro}
+        contar={(id) => pecas.filter((p) => (p.raca_id ?? null) === id).length}
+      />
+
       {grupos.length === 0 ? (
-        <Vazio texto="Crie os grupos de camada primeiro — é a ordem de empilhamento que diz onde cada peça entra." />
+        <Vazio texto="Crie os grupos de camada primeiro (Configurações › Camadas) — é a ordem de empilhamento que diz onde cada peça entra." />
       ) : (
         <>
           {/* ── abas por grupo ─────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-1.5 border-b border-borda px-8 py-4">
             {grupos.map((g) => {
-              const n = pecas.filter((p) => p.grupo_id === g.id).length;
+              const n = daRaca.filter((p) => p.grupo_id === g.id).length;
               const ativo = g.id === grupoAtivo;
               return (
                 <button
@@ -243,6 +270,7 @@ export function TelaPecas({
                           {!p.ativo && <span className="etiqueta opacity-60">inativa</span>}
                           {p.conjunto && <span className="etiqueta">conj. {p.conjunto}</span>}
                           {p.genero && <span className="etiqueta">{p.genero}</span>}
+                          <EtiquetaRaca raca={racas.find((r) => r.id === p.raca_id)} />
                         </div>
                       </div>
                     </button>
@@ -255,7 +283,7 @@ export function TelaPecas({
             <aside>
               <div className="caixa p-4">
                 <h2 className="titulo mb-3 text-[15px]">Personagem montado</h2>
-                <PreviewPersonagem grupos={grupos} pecas={pecas} paletas={paletas} altura={300} />
+                <PreviewPersonagem grupos={grupos} pecas={daRaca} paletas={paletas} altura={300} />
                 <p className="mt-3 text-[11px] leading-relaxed text-tinta-fraca">
                   Uma cor por paleta, um conjunto por família, grupos opcionais entrando pela
                   chance deles — é o mesmo sorteio que o jogo faz.
@@ -348,6 +376,19 @@ export function TelaPecas({
                 </Moldura>
 
                 <Moldura
+                  rotulo="Raça"
+                  ajuda="Sem raça = arte genérica, aparece em todos os povos. Escolha uma quando a peça só fizer sentido nele."
+                >
+                  <SelecaoRaca
+                    racas={racas}
+                    valor={editando.raca_id}
+                    aoMudar={(raca_id) => setEditando({ ...editando, raca_id })}
+                  />
+                </Moldura>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <Moldura
                   rotulo="Conjunto"
                   ajuda={
                     grupoDoRascunho?.familia
@@ -423,7 +464,7 @@ export function TelaPecas({
                 <h3 className="titulo mb-3 text-[14px]">Como fica no personagem</h3>
                 <PreviewPersonagem
                   grupos={grupos}
-                  pecas={pecas}
+                  pecas={daRaca}
                   paletas={paletas}
                   fixar={pecaFixada ? { grupoId: editando.grupo_id, peca: pecaFixada } : null}
                   altura={250}

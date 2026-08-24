@@ -2,9 +2,13 @@ import { Crud } from '@/componentes/Crud';
 import { SchemaFaltando } from '@/componentes/ui';
 import type { DefCampo, Registro } from '@/lib/campos';
 import { buscar } from '@/lib/consultas';
+import type { Raca } from '@/lib/tipos';
 
-// O vocabulário solto que a geração sorteia. É a tela mais fácil de encher —
-// provavelmente a primeira que os amigos vão usar de verdade.
+// FALAS — a outra metade de "Nomes e falas" (mesma tabela `vocabulario`,
+// filtrada por tipo). O que o visitante diz ao chegar e ao responder de onde
+// veio.
+
+const TIPOS = ['fala_neutra', 'resposta_origem'] as const;
 
 const CAMPOS: DefCampo[] = [
   {
@@ -13,11 +17,8 @@ const CAMPOS: DefCampo[] = [
     tipo: 'selecao',
     obrigatorio: true,
     naTabela: true,
-    padrao: 'nome_masculino',
+    padrao: 'fala_neutra',
     opcoes: [
-      { valor: 'nome_masculino', rotulo: 'Nome masculino' },
-      { valor: 'nome_feminino', rotulo: 'Nome feminino' },
-      { valor: 'sobrenome', rotulo: 'Sobrenome' },
       { valor: 'fala_neutra', rotulo: 'Fala de chegada' },
       { valor: 'resposta_origem', rotulo: 'Resposta de origem' },
     ],
@@ -36,19 +37,25 @@ const CAMPOS: DefCampo[] = [
 ];
 
 export default async function Pagina() {
-  const { linhas, semSchema } = await buscar<Registro>('vocabulario', { ordem: 'tipo' });
+  const [{ linhas, semSchema }, racas] = await Promise.all([
+    buscar<Registro>('vocabulario', { ordem: 'tipo' }),
+    buscar<Raca>('raca', { ordem: 'codigo' }),
+  ]);
   if (semSchema) return <SchemaFaltando />;
+
+  const doGrupo = linhas.filter((l) => TIPOS.includes(l.tipo as (typeof TIPOS)[number]));
 
   return (
     <Crud
-      titulo="Nomes e falas"
-      descricao="Nomes, sobrenomes e as falas que a geração sorteia. Puro volume: quanto mais, menos o elenco se repete."
+      titulo="Falas"
+      descricao="O que o visitante diz ao chegar e ao responder de onde veio."
       tabela="vocabulario"
-      caminho="/personagens/vocabulario"
+      caminho="/personagens/falas"
       campos={CAMPOS}
-      linhas={linhas}
-      singular="verbete"
-      plural="verbetes"
+      linhas={doGrupo}
+      racas={racas.linhas}
+      singular="fala"
+      plural="falas"
       nota="Falas de chegada são NEUTRAS de propósito: servem pra honesto e farsante, e nunca citam horário (senão um 'boa noite' vaza num nível de dia). A fala é atmosfera — a prova está na bolsa e no corpo."
     />
   );

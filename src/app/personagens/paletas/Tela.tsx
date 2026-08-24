@@ -4,10 +4,18 @@ import { useState, useTransition } from 'react';
 import { Palette, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/componentes/Modal';
 import { Moldura, SeletorCor } from '@/componentes/campos';
+import {
+  EtiquetaRaca,
+  FiltroRacas,
+  RACA_GENERICA,
+  SelecaoRaca,
+  pertenceARaca,
+  racaPadrao,
+} from '@/componentes/FiltroRacas';
 import { Aviso, Cabecalho, Contador, Folha, Vazio } from '@/componentes/ui';
 import { apagar, salvarComLigacoes } from '@/lib/acoes';
 import { paraChave } from '@/lib/campos';
-import type { Cor, Paleta } from '@/lib/tipos';
+import type { Cor, Paleta, Raca } from '@/lib/tipos';
 
 const CAMINHO = '/personagens/paletas';
 
@@ -16,17 +24,30 @@ type Rascunho = {
   chave: string;
   nome: string;
   descricao: string;
+  raca_id: string | null;
   ordem: number;
   cores: { nome: string; hex: string }[];
 };
 
-const VAZIA: Rascunho = { chave: '', nome: '', descricao: '', ordem: 0, cores: [] };
+const VAZIA: Rascunho = {
+  chave: '',
+  nome: '',
+  descricao: '',
+  raca_id: null,
+  ordem: 0,
+  cores: [],
+};
 
-export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
+export function TelaPaletas({ paletas, racas }: { paletas: Paleta[]; racas: Raca[] }) {
   const [editando, setEditando] = useState<Rascunho | null>(null);
   const [confirmando, setConfirmando] = useState<Paleta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, iniciar] = useTransition();
+  const [racaFiltro, setRacaFiltro] = useState(() => racaPadrao(racas));
+
+  // Uma paleta de pele élfica não deve aparecer no filtro de humano; uma paleta
+  // sem raça (couro, metal) aparece em todos.
+  const visiveis = paletas.filter((p) => pertenceARaca(p.raca_id ?? null, racaFiltro));
 
   function abrir(p?: Paleta) {
     setErro(null);
@@ -37,10 +58,15 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
             chave: p.chave,
             nome: p.nome,
             descricao: p.descricao ?? '',
+            raca_id: p.raca_id ?? null,
             ordem: p.ordem,
             cores: (p.cores ?? []).map((c: Cor) => ({ nome: c.nome, hex: c.hex })),
           }
-        : { ...VAZIA, ordem: paletas.length * 10 },
+        : {
+            ...VAZIA,
+            raca_id: racaFiltro === RACA_GENERICA ? null : racaFiltro,
+            ordem: paletas.length * 10,
+          },
     );
   }
 
@@ -55,6 +81,7 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
           chave: editando.chave,
           nome: editando.nome,
           descricao: editando.descricao || null,
+          raca_id: editando.raca_id,
           ordem: editando.ordem,
         },
         [
@@ -78,12 +105,19 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
         descricao="As cores sorteáveis de cada parte do personagem. Uma cor é sorteada POR PALETA e pintada em todas as peças que apontam pra ela."
         acoes={
           <>
-            <Contador n={paletas.length} singular="paleta" plural="paletas" />
+            <Contador n={visiveis.length} singular="paleta" plural="paletas" />
             <button className="botao botao-primario" onClick={() => abrir()}>
               <Plus size={16} /> Nova
             </button>
           </>
         }
+      />
+
+      <FiltroRacas
+        racas={racas}
+        valor={racaFiltro}
+        aoMudar={setRacaFiltro}
+        contar={(id) => paletas.filter((p) => (p.raca_id ?? null) === id).length}
       />
 
       <div className="border-b border-borda px-8 py-4">
@@ -94,9 +128,13 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
         </Aviso>
       </div>
 
-      {paletas.length === 0 ? (
+      {visiveis.length === 0 ? (
         <Vazio
-          texto="Nenhuma paleta ainda. Comece por pele, cabelo, olho e roupa — são as quatro que o personagem modular precisa."
+          texto={
+            paletas.length > 0
+              ? 'Nenhuma paleta nesta raça. Paletas sem raça (couro, metal) aparecem em todas elas.'
+              : 'Nenhuma paleta ainda. Comece por pele, cabelo, olho e roupa — são as quatro que o personagem modular precisa.'
+          }
           acao={
             <button className="botao botao-primario" onClick={() => abrir()}>
               <Plus size={16} /> Criar a primeira
@@ -105,7 +143,7 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
         />
       ) : (
         <div className="grid gap-4 p-8 sm:grid-cols-2 xl:grid-cols-3">
-          {paletas.map((p) => (
+          {visiveis.map((p) => (
             <button
               key={p.id}
               onClick={() => abrir(p)}
@@ -115,7 +153,10 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
                 <span className="titulo text-[17px]">{p.nome}</span>
                 <Palette size={16} className="text-tinta-fraca opacity-50" />
               </div>
-              <code className="text-[11px] text-tinta-fraca">{p.chave}</code>
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] text-tinta-fraca">{p.chave}</code>
+                <EtiquetaRaca raca={racas.find((r) => r.id === p.raca_id)} />
+              </div>
 
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {(p.cores ?? []).map((c: Cor) => (
@@ -201,17 +242,29 @@ export function TelaPaletas({ paletas }: { paletas: Paleta[] }) {
               </Moldura>
             </div>
 
-            <Moldura
-              rotulo="Descrição"
-              ajuda="Anote o que esta paleta pinta — é o que evita alguém ligar a peça errada nela."
-            >
-              <input
-                className="campo"
-                value={editando.descricao}
-                placeholder="Corpo, orelhas, rosto e nariz — sempre no mesmo tom."
-                onChange={(e) => setEditando({ ...editando, descricao: e.target.value })}
-              />
-            </Moldura>
+            <div className="grid grid-cols-2 gap-5">
+              <Moldura
+                rotulo="Descrição"
+                ajuda="Anote o que esta paleta pinta — é o que evita alguém ligar a peça errada nela."
+              >
+                <input
+                  className="campo"
+                  value={editando.descricao}
+                  placeholder="Corpo, orelhas, rosto e nariz — sempre no mesmo tom."
+                  onChange={(e) => setEditando({ ...editando, descricao: e.target.value })}
+                />
+              </Moldura>
+              <Moldura
+                rotulo="Raça"
+                ajuda="Sem raça = serve a todas (couro, metal). Escolha uma quando o tom for do povo — pele élfica não sai num humano."
+              >
+                <SelecaoRaca
+                  racas={racas}
+                  valor={editando.raca_id}
+                  aoMudar={(raca_id) => setEditando({ ...editando, raca_id })}
+                />
+              </Moldura>
+            </div>
 
             <div>
               <div className="mb-2 flex items-center justify-between">

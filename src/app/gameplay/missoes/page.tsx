@@ -12,13 +12,29 @@ export default async function Pagina() {
   const { linhas, semSchema } = await buscar<Registro>('missao', { ordem: 'classe' });
   if (semSchema) return <SchemaFaltando />;
 
-  const [regioes, cenarios, ambientes, regras, perfis] = await Promise.all([
-    opcoesDe('regiao'),
+  const [vilas, todosNiveis, cenarios, ambientes, regras, perfis] = await Promise.all([
+    opcoesDe('vila'),
+    buscar<{ id: string; vila_id: string; nivel: number; variacao: number; nome: string | null }>(
+      'nivel',
+      { ordem: 'nivel' },
+    ),
     opcoesDe('cenario'),
     opcoesDe('ambiente_sonoro'),
     opcoesDe('regra'),
     opcoesDe('perfil_geracao'),
   ]);
+
+  // O nível não tem um "nome" confiável (é opcional), então o rótulo é montado
+  // da chave de verdade: vila · nível · variação.
+  const nomeVila = new Map(vilas.map((v) => [v.valor, v.rotulo]));
+  const niveis = todosNiveis.linhas
+    .sort((a, b) => a.nivel - b.nivel || a.variacao - b.variacao)
+    .map((n) => ({
+      valor: n.id,
+      rotulo: `${nomeVila.get(n.vila_id) ?? '?'} · nível ${n.nivel} · var. ${n.variacao}${
+        n.nome ? ` — ${n.nome}` : ''
+      }`,
+    }));
 
   const campos: DefCampo[] = [
     { chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true, naTabela: true, dica: 'Festival do Rei' },
@@ -33,7 +49,14 @@ export default async function Pagina() {
       opcoes: CLASSES.map((c) => ({ valor: c, rotulo: c === 'tutorial' ? 'Treino' : `Classe ${c}` })),
       ajuda: 'Treino e F mostram 1 oferta e podem repetir. Da classe E em diante são 3 ofertas e o trabalho some.',
     },
-    { chave: 'regiao_id', rotulo: 'Região', tipo: 'selecao', naTabela: true, opcoes: regioes },
+    { chave: 'vila_id', rotulo: 'Vila', tipo: 'selecao', naTabela: true, opcoes: vilas },
+    {
+      chave: 'nivel_id',
+      rotulo: 'Nível da vila',
+      tipo: 'selecao',
+      opcoes: niveis,
+      ajuda: 'Onde dentro da vila o expediente acontece. Vazio = a vila inteira decide o cenário.',
+    },
     { chave: 'evento', rotulo: 'Evento do dia', tipo: 'texto', dica: 'Festival da Colheita' },
     {
       chave: 'problemas',

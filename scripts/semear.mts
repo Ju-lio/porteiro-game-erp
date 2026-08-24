@@ -94,12 +94,24 @@ async function inserir<T extends object>(tabela: string, linhas: T[]): Promise<M
   // Ordem inversa das dependências; o cascade cobre o resto.
   for (const t of [
     'missao', 'cartaz', 'regra', 'perfil_geracao', 'profissao', 'marca', 'item_bolsa',
-    'vocabulario', 'cidade', 'regiao', 'tipo_documento', 'ambiente_sonoro', 'som', 'cenario',
+    'vocabulario', 'lugar', 'nivel', 'vila', 'tipo_documento', 'ambiente_sonoro', 'som', 'cenario',
     'peca', 'grupo_camada', 'paleta',
   ]) {
     await db.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
   }
   ok('tabelas de conteúdo esvaziadas (assets e bundles ficam)');
+}
+
+// A raça HUMANO não é apagada acima (não está na lista) — schema.sql já a
+// semeia com codigo=1. Paletas, peças e nomes (não as falas) nascem ligados
+// a ela, porque hoje é o único povo que o jogo tem.
+const { data: humano } = await db.from('raca').select('id').eq('codigo', 1).maybeSingle();
+const humanoId = humano?.id as string | undefined;
+if (!humanoId) {
+  console.error(
+    '\n\x1b[31mNão achei a raça Humano (código 1).\x1b[0m Cole erp/supabase/schema.sql de novo — ele semeia essa linha.\n',
+  );
+  process.exit(1);
 }
 
 // ── 1. PALETAS ─────────────────────────────────────────────────────────────
@@ -112,6 +124,7 @@ const paletas = await inserir(
   Object.keys(PALETAS).map((chave, i) => ({
     chave,
     nome: NOMES_PALETA[chave] ?? chave,
+    raca_id: humanoId,
     ordem: i * 10,
   })),
 );
@@ -378,6 +391,7 @@ if (comPecas) {
         chave: def.chave,
         nome: def.nome,
         genero: null,
+        raca_id: humanoId,
         arquetipos: ['generico'],
         conjunto: def.conjunto ?? null,
         ativo: true,
@@ -484,18 +498,20 @@ for (const p of PROFISSOES as ProfJogo[]) {
 }
 ok(`${profissoes.size} profissões, com itens, marcas e falas`);
 
-// ── 6. VOCABULÁRIO E CIDADES ───────────────────────────────────────────────
-passo('Nomes, falas e cidades');
+// ── 6. VOCABULÁRIO ─────────────────────────────────────────────────────────
+// Nomes (masculino/feminino/sobrenome) nascem ligados ao Humano — hoje é o
+// único povo do jogo. Falas (chegada, resposta de origem) ficam SEM raça de
+// propósito: são atmosfera neutra, servem pra qualquer visitante.
+passo('Nomes e falas');
 const vocabulario = [
-  ...geracao.NOMES_MASCULINOS.map((t: string) => ({ tipo: 'nome_masculino', texto: t })),
-  ...geracao.NOMES_FEMININOS.map((t: string) => ({ tipo: 'nome_feminino', texto: t })),
-  ...geracao.SOBRENOMES_MEDIEVAIS.map((t: string) => ({ tipo: 'sobrenome', texto: t })),
+  ...geracao.NOMES_MASCULINOS.map((t: string) => ({ tipo: 'nome_masculino', texto: t, raca_id: humanoId })),
+  ...geracao.NOMES_FEMININOS.map((t: string) => ({ tipo: 'nome_feminino', texto: t, raca_id: humanoId })),
+  ...geracao.SOBRENOMES_MEDIEVAIS.map((t: string) => ({ tipo: 'sobrenome', texto: t, raca_id: humanoId })),
   ...geracao.FALAS_NEUTRAS.map((t: string) => ({ tipo: 'fala_neutra', texto: t })),
   ...geracao.MODELOS_RESPOSTA_ORIGEM.map((t: string) => ({ tipo: 'resposta_origem', texto: t })),
 ].map((v, i) => ({ ...v, ordem: i }));
 await inserirLigacoes('vocabulario', vocabulario);
-await inserirLigacoes('cidade', geracao.CIDADES.map((nome: string) => ({ nome })));
-ok(`${vocabulario.length} verbetes e ${geracao.CIDADES.length} cidades`);
+ok(`${vocabulario.length} verbetes (sem raça — valem pra todas)`);
 
 // ── 6.5 DOCUMENTOS ─────────────────────────────────────────────────────────
 // O selo do Rei era um booleano no passe; agora é um TIPO DE DOCUMENTO. A cor
@@ -733,8 +749,8 @@ const ambientes = await inserir(
 );
 ok(`${ambientes.size} ambientes sonoros`);
 
-// ── 11. REGIÕES (a partir das que as missões citam) ────────────────────────
-passo('Regiões');
+// ── 11. VILAS (a partir das que as missões citam) ──────────────────────────
+passo('Vilas');
 type MissaoJogo = {
   modeloId: string; nome: string; regiao: string; classe: string; evento?: string;
   problemas: string[]; dificuldade: number; cenarioId: string; ambienteSonoroId?: string;
@@ -742,25 +758,55 @@ type MissaoJogo = {
   pagamentoPorAcerto: number; multaPorErro: number; fracaoParaAprovar: number;
 };
 const missoesJogo = CATALOGO_MISSOES as MissaoJogo[];
-const nomesRegiao = [...new Set(missoesJogo.map((m) => m.regiao))];
+const nomesVila = [...new Set(missoesJogo.map((m) => m.regiao))];
 const chaveDe = (n: string) =>
   n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
-const regioes = await inserir(
-  'regiao',
-  nomesRegiao.map((nome, i) => ({
+const vilas = await inserir(
+  'vila',
+  nomesVila.map((nome, i) => ({
     chave: chaveDe(nome),
     nome,
     ordem: i * 10,
     cenario_id: cenarios.get('castelo') ?? null,
     ambiente_sonoro_id: ambientes.get('vila') ?? null,
+    // O padrão pedido: 100% na média. As quatro faixas têm que somar 100.
+    educacao_analfabeto: 0,
+    educacao_media: 100,
+    educacao_acima: 0,
+    educacao_alto: 0,
   })),
 );
 await inserirLigacoes(
-  'regiao_documento',
-  [...regioes.values()].map((regiao_id) => ({ regiao_id, tipo_documento_id: seloDoRei })),
+  'vila_documento',
+  [...vilas.values()].map((vila_id) => ({ vila_id, tipo_documento_id: seloDoRei })),
 );
-ok(`${regioes.size} regiões (criadas a partir das missões), todas exigindo o Selo do Rei`);
+ok(`${vilas.size} vilas (criadas a partir das missões), todas exigindo o Selo do Rei`);
+
+// ── 11.1 NÍVEIS ────────────────────────────────────────────────────────────
+// Uma vila sem nível não tem onde ser jogada. Cada uma nasce com "nível 1 ·
+// variação 1" e SEM arte própria — o bundle faz o nível herdar o cenário da
+// vila, então isso já publica válido. Arte por nível entra depois, na tela.
+passo('Níveis');
+await inserirLigacoes(
+  'nivel',
+  [...vilas.values()].map((vila_id) => ({ vila_id, nivel: 1, variacao: 1, nome: 'Portão' })),
+);
+ok(`${vilas.size} níveis (um por vila, herdando o cenário dela)`);
+
+// ── 11.2 LUGARES (era "cidades") ───────────────────────────────────────────
+// Todo lugar pertence obrigatoriamente a uma vila agora, então só dá pra criar
+// depois delas. Distribui em rodízio — é semeadura, não curadoria.
+passo('Lugares');
+const idsVila = [...vilas.values()];
+await inserirLigacoes(
+  'lugar',
+  geracao.CIDADES.map((nome: string, i: number) => ({
+    nome,
+    vila_id: idsVila[i % idsVila.length],
+  })),
+);
+ok(`${geracao.CIDADES.length} lugares, distribuídos entre as vilas`);
 
 // ── 12. MISSÕES ────────────────────────────────────────────────────────────
 passo('Missões');
@@ -769,7 +815,7 @@ const missoes = await inserir(
   missoesJogo.map((m) => ({
     chave: m.modeloId,
     nome: m.nome,
-    regiao_id: regioes.get(chaveDe(m.regiao)) ?? null,
+    vila_id: vilas.get(chaveDe(m.regiao)) ?? null,
     classe: m.classe,
     evento: m.evento ?? null,
     problemas: m.problemas,

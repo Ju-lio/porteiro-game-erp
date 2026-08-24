@@ -5,7 +5,16 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { apagar, salvar } from '@/lib/acoes';
 import type { DefCampo, Registro } from '@/lib/campos';
 import { registroVazio } from '@/lib/campos';
+import type { Raca } from '@/lib/tipos';
 import { CampoAuto } from './campos';
+import {
+  EtiquetaRaca,
+  FiltroRacas,
+  RACA_GENERICA,
+  SelecaoRaca,
+  pertenceARaca,
+  racaPadrao,
+} from './FiltroRacas';
 import { Modal } from './Modal';
 import { Aviso, Cabecalho, Contador, Folha, Vazio } from './ui';
 
@@ -13,6 +22,10 @@ import { Aviso, Cabecalho, Contador, Folha, Vazio } from './ui';
  * CRUD genérico: uma tela inteira a partir de um descritor de campos.
  * As telas ricas (peças, camadas, publicação) têm componente próprio; tudo o
  * mais cai aqui, o que mantém a consistência visual de graça.
+ *
+ * Passando `racas`, a tela ganha os cards de filtro por raça no topo, a coluna
+ * "Raça" na tabela e o seletor no formulário — é como Nomes e falas e
+ * Temperamentos herdam o comportamento da aba Personagens sem código próprio.
  */
 export function Crud({
   titulo,
@@ -24,6 +37,7 @@ export function Crud({
   singular,
   plural,
   nota,
+  racas,
 }: {
   titulo: string;
   descricao?: string;
@@ -35,13 +49,27 @@ export function Crud({
   plural: string;
   /** Aviso fixo no topo — use pra explicar a regra de design da tela. */
   nota?: string;
+  /** Presente = a tela filtra por raça (coluna `raca_id` na tabela do banco). */
+  racas?: Raca[];
 }) {
   const [editando, setEditando] = useState<Registro | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState<Registro | null>(null);
   const [pendente, iniciar] = useTransition();
+  const [racaFiltro, setRacaFiltro] = useState(() => (racas ? racaPadrao(racas) : RACA_GENERICA));
 
   const colunas = campos.filter((c) => c.naTabela);
+
+  const visiveis = racas
+    ? linhas.filter((l) => pertenceARaca((l.raca_id as string | null) ?? null, racaFiltro))
+    : linhas;
+
+  /** O registro novo já nasce na raça que está filtrada — menos um clique. */
+  function novo(): Registro {
+    const base = registroVazio(campos);
+    if (racas) base.raca_id = racaFiltro === RACA_GENERICA ? null : racaFiltro;
+    return base;
+  }
 
   function submeter() {
     if (!editando) return;
@@ -74,16 +102,24 @@ export function Crud({
         descricao={descricao}
         acoes={
           <>
-            <Contador n={linhas.length} singular={singular} plural={plural} />
-            <button
-              className="botao botao-primario"
-              onClick={() => setEditando(registroVazio(campos))}
-            >
+            <Contador n={visiveis.length} singular={singular} plural={plural} />
+            <button className="botao botao-primario" onClick={() => setEditando(novo())}>
               <Plus size={16} /> Novo
             </button>
           </>
         }
       />
+
+      {racas && (
+        <FiltroRacas
+          racas={racas}
+          valor={racaFiltro}
+          aoMudar={setRacaFiltro}
+          contar={(id) =>
+            linhas.filter((l) => ((l.raca_id as string | null) ?? null) === id).length
+          }
+        />
+      )}
 
       {nota && (
         <div className="border-b border-borda px-8 py-4">
@@ -91,14 +127,15 @@ export function Crud({
         </div>
       )}
 
-      {linhas.length === 0 ? (
+      {visiveis.length === 0 ? (
         <Vazio
-          texto={`Nenhum registro de ${plural} ainda. O jogo funciona com a lista vazia, mas o conteúdo é o que dá vida a ele.`}
+          texto={
+            racas && linhas.length > 0
+              ? `Nenhum registro de ${plural} nesta raça. Registros sem raça aparecem em todas elas.`
+              : `Nenhum registro de ${plural} ainda. O jogo funciona com a lista vazia, mas o conteúdo é o que dá vida a ele.`
+          }
           acao={
-            <button
-              className="botao botao-primario"
-              onClick={() => setEditando(registroVazio(campos))}
-            >
+            <button className="botao botao-primario" onClick={() => setEditando(novo())}>
               <Plus size={16} /> Criar o primeiro
             </button>
           }
@@ -111,17 +148,23 @@ export function Crud({
                 {colunas.map((c) => (
                   <th key={c.chave}>{c.rotulo}</th>
                 ))}
+                {racas && <th>Raça</th>}
                 <th className="w-px" />
               </tr>
             </thead>
             <tbody>
-              {linhas.map((linha) => (
+              {visiveis.map((linha) => (
                 <tr key={String(linha.id)}>
                   {colunas.map((c) => (
                     <td key={c.chave}>
                       <Celula def={c} valor={linha[c.chave]} />
                     </td>
                   ))}
+                  {racas && (
+                    <td>
+                      <EtiquetaRaca raca={racas.find((r) => r.id === linha.raca_id)} />
+                    </td>
+                  )}
                   <td>
                     <div className="flex justify-end gap-1">
                       <button
@@ -182,6 +225,22 @@ export function Crud({
                 />
               </div>
             ))}
+            {racas && (
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block">
+                  <span className="rotulo">Raça</span>
+                  <SelecaoRaca
+                    racas={racas}
+                    valor={(editando.raca_id as string | null) ?? null}
+                    aoMudar={(raca_id) => setEditando({ ...editando, raca_id })}
+                  />
+                  <span className="mt-1.5 block text-[11px] leading-relaxed text-tinta-fraca">
+                    Sem raça = aparece em todas elas. Escolha uma quando o registro só fizer
+                    sentido naquele povo.
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
         )}
       </Modal>

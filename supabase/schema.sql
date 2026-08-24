@@ -1,8 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- PORTEIRO ERP — schema completo (Fase 0)
+-- PORTEIRO ERP — schema completo
 --
 -- Cole isto inteiro no SQL Editor do Supabase e rode. É idempotente: pode
--- rodar de novo sem quebrar nada.
+-- rodar de novo sem quebrar nada. A seção MIGRAÇÃO no topo cuida dos bancos
+-- que já rodaram a versão anterior.
 --
 -- PRINCÍPIOS QUE O SCHEMA IMPÕE (não são detalhe, são o jogo):
 --   1. Não existe coluna "culpado". O gabarito é DERIVADO da regra do contrato
@@ -15,6 +16,12 @@
 --      rollback de um bundle antigo reproduzir o jogo daquele dia pixel a pixel.
 --   4. RLS ligado e SEM policy: ninguém alcança as tabelas com a chave pública.
 --      Todo acesso passa pelo servidor do ERP, que usa a secret key.
+--
+-- VOCABULÁRIO (refatoração de ago/2026):
+--   REGIÃO   → VILA    (a unidade de mundo; sempre no singular, "vila")
+--   CIDADE   → LUGAR   (nome solto que vai pro passe; SEMPRE ligado a uma vila)
+--   (novo)     NÍVEL   (a vila tem ~3 níveis, cada um com N variações)
+--   (novo)     RAÇA    (atravessa tudo que é de personagem)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 create extension if not exists "pgcrypto";
@@ -25,6 +32,66 @@ returns trigger language plpgsql as $$
 begin
   new.atualizado_em = now();
   return new;
+end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MIGRAÇÃO — Região vira VILA, Cidade vira LUGAR
+--
+-- Precisa vir ANTES de qualquer `create table`, senão o `create table if not
+-- exists vila` criaria uma tabela vazia ao lado da `regiao` cheia de dados.
+-- Renomear preserva as linhas, os ids e as FKs que apontam pra cá.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+begin
+  -- regiao → vila
+  if to_regclass('public.regiao') is not null and to_regclass('public.vila') is null then
+    alter table public.regiao rename to vila;
+  end if;
+
+  -- regiao_ligacao → vila_ligacao (+ coluna e constraints, que o PostgREST usa
+  -- pelo NOME na hora de embutir a relação — ver as consultas em app/mundo/vilas)
+  if to_regclass('public.regiao_ligacao') is not null and to_regclass('public.vila_ligacao') is null then
+    alter table public.regiao_ligacao rename to vila_ligacao;
+  end if;
+  if to_regclass('public.vila_ligacao') is not null then
+    if exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'vila_ligacao' and column_name = 'regiao_id') then
+      alter table public.vila_ligacao rename column regiao_id to vila_id;
+    end if;
+    if exists (select 1 from pg_constraint where conname = 'regiao_ligacao_regiao_id_fkey') then
+      alter table public.vila_ligacao rename constraint regiao_ligacao_regiao_id_fkey to vila_ligacao_vila_id_fkey;
+    end if;
+    if exists (select 1 from pg_constraint where conname = 'regiao_ligacao_destino_id_fkey') then
+      alter table public.vila_ligacao rename constraint regiao_ligacao_destino_id_fkey to vila_ligacao_destino_id_fkey;
+    end if;
+  end if;
+
+  -- regiao_documento → vila_documento
+  if to_regclass('public.regiao_documento') is not null and to_regclass('public.vila_documento') is null then
+    alter table public.regiao_documento rename to vila_documento;
+  end if;
+  if to_regclass('public.vila_documento') is not null
+     and exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'vila_documento' and column_name = 'regiao_id') then
+    alter table public.vila_documento rename column regiao_id to vila_id;
+  end if;
+
+  -- cidade → lugar
+  if to_regclass('public.cidade') is not null and to_regclass('public.lugar') is null then
+    alter table public.cidade rename to lugar;
+  end if;
+  if to_regclass('public.lugar') is not null
+     and exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'lugar' and column_name = 'regiao_id') then
+    alter table public.lugar rename column regiao_id to vila_id;
+  end if;
+
+  -- missao.regiao_id → missao.vila_id
+  if to_regclass('public.missao') is not null
+     and exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'missao' and column_name = 'regiao_id') then
+    alter table public.missao rename column regiao_id to vila_id;
+  end if;
 end $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -69,6 +136,87 @@ values ('assets', 'assets', true)
 on conflict (id) do nothing;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- RAÇA — o eixo novo do conteúdo de personagem
+--
+-- A raça atravessa paleta de cor, peça de arte e vocabulário de NOMES (não as
+-- falas, que ficam genéricas de propósito). Temperamento é o único vocabulário
+-- de personagem que NÃO tem raça própria — é geral, e mora em Gameplay.
+--
+-- `raca_id` NULO nessas tabelas quer dizer "serve para TODAS as raças" — é o
+-- que permite ter uma peça genérica (um cinto, um item de roupa) sem duplicá-la
+-- em cada raça. As telas mostram isso como o card "Todas".
+--
+-- `codigo` é o código interno SEQUENCIAL pedido no cadastro. Humano nasce como
+-- 1 e é a raça padrão de filtro em todas as telas de Personagem.
+-- ═══════════════════════════════════════════════════════════════════════════
+create sequence if not exists public.raca_codigo_seq;
+
+create table if not exists public.raca (
+  id        uuid primary key default gen_random_uuid(),
+  codigo    int  not null unique default nextval('public.raca_codigo_seq'),
+  chave     text not null unique,
+  nome      text not null,
+  descricao text,
+  /* Etnias da raça — lista de textos livres, sem tabela própria de propósito:
+     é vocabulário de lore, não entidade com comportamento. */
+  etnias    text[] not null default '{}',
+  cor       text check (cor is null or cor ~* '^#[0-9a-f]{6}$'),
+  ordem     int not null default 0,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+alter sequence public.raca_codigo_seq owned by public.raca.codigo;
+
+-- A raça padrão. Todo filtro de tela abre nela.
+insert into public.raca (codigo, chave, nome, descricao, ordem)
+values (1, 'humano', 'Humano', 'A raça padrão do jogo — o único visitante que existe hoje na cabine.', 0)
+on conflict (chave) do nothing;
+
+-- Mantém a sequência à frente do maior código já usado (inclusive o 1 semeado).
+select setval('public.raca_codigo_seq', greatest(1, coalesce((select max(codigo) from public.raca), 1)));
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- TEMPERAMENTO — o vocabulário de como um povo reage a outro
+--
+-- É GERAL, sem raça própria — "desconfiança" não muda de significado entre
+-- povos. Vive em Gameplay › Temperamentos, e a Vila usa a lista na Aba
+-- Temperamento pra dizer "esta vila sente TANTO de TAL temperamento por TAL
+-- raça" (a raça entra ali, na ligação — não aqui no cadastro).
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.temperamento (
+  id        uuid primary key default gen_random_uuid(),
+  chave     text not null unique,
+  nome      text not null,
+  descricao text,
+  /* Positivo (+1) sobe no gráfico, negativo (-1) desce. É o que dá sinal ao
+     eixo do gráfico da Aba Temperamento sem precisar de uma tabela de
+     "polaridade". */
+  sinal     int not null default -1 check (sinal in (-1, 1)),
+  cor       text check (cor is null or cor ~* '^#[0-9a-f]{6}$'),
+  ordem     int not null default 0,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+-- Migração de bancos que já rodaram a versão anterior (temperamento tinha raça própria).
+alter table public.temperamento drop column if exists raca_id;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PROTAGONISTAS — o elenco fixo do jogo (não sorteado)
+--
+-- Nasce simples de propósito: nome e descrição. Fica em Personagens, primeiro
+-- item do menu, porque é o primeiro lugar onde um novo integrante do time
+-- entende quem são os personagens fixos antes de mexer em conteúdo sorteado.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.protagonista (
+  id        uuid primary key default gen_random_uuid(),
+  nome      text not null,
+  descricao text,
+  ordem     int not null default 0,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- PERSONAGEM MODULAR
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -80,10 +228,15 @@ create table if not exists public.paleta (
   chave  text not null unique,
   nome   text not null,
   descricao text,
+  /* Nulo = paleta de todas as raças. Um tom de pele élfico mora numa paleta
+     com raca_id da raça élfica; o couro do cinto fica em uma paleta sem raça. */
+  raca_id uuid references public.raca(id) on delete set null,
   ordem  int  not null default 0,
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.paleta add column if not exists raca_id uuid references public.raca(id) on delete set null;
+create index if not exists paleta_raca_idx on public.paleta(raca_id, ordem);
 
 create table if not exists public.cor (
   id        uuid primary key default gen_random_uuid(),
@@ -96,6 +249,9 @@ create index if not exists cor_paleta_idx on public.cor(paleta_id, ordem);
 
 -- Grupo de camada: "cabelo-traseiro", "corpo", "roupa"... A ORDEM aqui é o
 -- empilhamento. Grupo novo (uma bolsa, um chapéu) entra sem renumerar nada.
+--
+-- ⚠️ Camadas NÃO tem raça: a ordem de empilhamento é geral do jogo, não de um
+-- povo. Por isso a tela dela mudou de Personagens para Settings.
 create table if not exists public.grupo_camada (
   id       uuid primary key default gen_random_uuid(),
   chave    text not null unique,
@@ -146,6 +302,9 @@ create table if not exists public.peca (
   nome     text not null,
   -- Restrições de sorteio. `genero` nulo = serve pra qualquer um.
   genero   text check (genero in ('masculino','feminino')),
+  /* Nulo = peça de todas as raças. É o caminho para a arte genérica não
+     precisar ser duplicada em cada povo. */
+  raca_id  uuid references public.raca(id) on delete set null,
   arquetipos text[] not null default '{generico}',
   -- Conjunto: dentro de uma família, o que casa com o quê. Duas peças de
   -- grupos diferentes com a mesma família+conjunto entram sempre juntas.
@@ -155,7 +314,9 @@ create table if not exists public.peca (
   atualizado_em timestamptz not null default now(),
   unique (grupo_id, chave)
 );
+alter table public.peca add column if not exists raca_id uuid references public.raca(id) on delete set null;
 create index if not exists peca_grupo_idx on public.peca(grupo_id);
+create index if not exists peca_raca_idx on public.peca(raca_id);
 
 -- Um arquivo por sub-camada da peça. É aqui que traço e cor se juntam.
 create table if not exists public.peca_arquivo (
@@ -212,8 +373,8 @@ create table if not exists public.ambiente_sonoro (
   atualizado_em timestamptz not null default now()
 );
 
--- A imagem base do mapa-múndi sobre a qual as regiões são posicionadas
--- (Regiões → Editar mapa). Linha única, como `sombra`.
+-- A imagem base do mapa-múndi sobre a qual as vilas são posicionadas
+-- (Vilas → Editar mapa). Linha única, como `sombra`.
 create table if not exists public.mapa_mundi (
   id        int primary key default 1 check (id = 1),
   asset_id  uuid references public.asset(id),
@@ -221,17 +382,35 @@ create table if not exists public.mapa_mundi (
 );
 insert into public.mapa_mundi (id) values (1) on conflict (id) do nothing;
 
-create table if not exists public.regiao (
+-- ── CLIMA: cadastro solto, usado pela vila em proporção ────────────────────
+-- A vila não tem UM clima: tem uma distribuição ("70% chuvoso, 30% neblina").
+-- O cadastro é geral (fica no fim do menu Mundo) e a proporção é por vila.
+create table if not exists public.clima (
+  id        uuid primary key default gen_random_uuid(),
+  chave     text not null unique,
+  nome      text not null,
+  descricao text,
+  icone     text not null default '🌤️',
+  cor       text check (cor is null or cor ~* '^#[0-9a-f]{6}$'),
+  ordem     int not null default 0,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+-- ── VILA (era `regiao`) ────────────────────────────────────────────────────
+-- A unidade de mundo. Tudo pendura aqui: níveis, documentos, clima, relações
+-- com outras vilas, opiniões e temperamento por raça.
+create table if not exists public.vila (
   id        uuid primary key default gen_random_uuid(),
   chave     text not null unique,
   nome      text not null,
   descricao text,
   cor       text check (cor is null or cor ~* '^#[0-9a-f]{6}$'),
-  clima     text,
-  -- posição no mapa-múndi do jogo (em % da imagem, definida arrastando em Regiões → Editar mapa)
+  clima     text,                    -- LEGADO: texto livre da versão anterior
+  -- posição no mapa-múndi do jogo (em % da imagem, definida arrastando em Vilas → Editar mapa)
   pos_x     int,
   pos_y     int,
-  -- ícone que representa a região no mapa-múndi; sem ícone, o editor desenha um pino da `cor`
+  -- ícone que representa a vila no mapa-múndi; sem ícone, o editor desenha um pino da `cor`
   icone_mapa_id uuid references public.asset(id),
   cenario_id        uuid references public.cenario(id) on delete set null,
   ambiente_sonoro_id uuid references public.ambiente_sonoro(id) on delete set null,
@@ -240,29 +419,182 @@ create table if not exists public.regiao (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
--- Migração de bancos que já rodaram a versão anterior desta tabela.
-alter table public.regiao add column if not exists icone_mapa_id uuid references public.asset(id);
+alter table public.vila add column if not exists icone_mapa_id uuid references public.asset(id);
 
--- Estradas: caminhos possíveis entre regiões.
-create table if not exists public.regiao_ligacao (
-  regiao_id  uuid not null references public.regiao(id) on delete cascade,
-  destino_id uuid not null references public.regiao(id) on delete cascade,
-  primary key (regiao_id, destino_id),
-  check (regiao_id <> destino_id)
+-- Aba 2 — Política: como o reino funciona por dentro.
+alter table public.vila add column if not exists politica_interna text;
+-- Aba 3 — Cultura: costumes + o nível educacional em distribuição.
+alter table public.vila add column if not exists costumes text;
+
+-- ⚠️ NÍVEL EDUCACIONAL: quatro faixas que SOMAM 100. Subir uma abaixa as
+-- outras — é distribuição de população, não quatro notas independentes. O
+-- padrão é 100% na média, como pedido.
+--   0–20   analfabeto / ignorante  (Analfabeto, Inculto, Rústico)
+--   21–50  na média                (Letrado básico, Instruído, Paroquiano)
+--   51–80  acima da média          (Erudito, Estudioso, Escrivão)
+--   81–100 muito alto / rebuscado  (Sábio magistral, Filósofo real, Polímata)
+alter table public.vila add column if not exists educacao_analfabeto numeric(5,2) not null default 0;
+alter table public.vila add column if not exists educacao_media      numeric(5,2) not null default 100;
+alter table public.vila add column if not exists educacao_acima      numeric(5,2) not null default 0;
+alter table public.vila add column if not exists educacao_alto       numeric(5,2) not null default 0;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'vila_educacao_soma_100') then
+    alter table public.vila add constraint vila_educacao_soma_100 check (
+      round(educacao_analfabeto + educacao_media + educacao_acima + educacao_alto) = 100
+    );
+  end if;
+end $$;
+
+-- Estradas: caminhos possíveis entre vilas.
+create table if not exists public.vila_ligacao (
+  vila_id    uuid not null references public.vila(id) on delete cascade,
+  destino_id uuid not null references public.vila(id) on delete cascade,
+  primary key (vila_id, destino_id),
+  check (vila_id <> destino_id)
 );
 
-create table if not exists public.cidade (
+-- ── Aba 1 — a distribuição de clima da vila ────────────────────────────────
+-- `percentual` é quanto aquele clima aparece por lá. O validador avisa quando
+-- a soma foge de 100.
+create table if not exists public.vila_clima (
+  vila_id    uuid not null references public.vila(id) on delete cascade,
+  clima_id   uuid not null references public.clima(id) on delete cascade,
+  percentual numeric(5,2) not null default 0 check (percentual >= 0 and percentual <= 100),
+  primary key (vila_id, clima_id)
+);
+
+-- ── Aba 2 — relações entre reinos ──────────────────────────────────────────
+-- Vila que NÃO aparece aqui é neutra por omissão: não existe linha "neutro",
+-- e é por isso que o tipo é obrigatório (tirar a relação = apagar a linha).
+create table if not exists public.vila_relacao (
+  vila_id  uuid not null references public.vila(id) on delete cascade,
+  alvo_id  uuid not null references public.vila(id) on delete cascade,
+  tipo     text not null check (tipo in ('oposicao','alianca')),
+  primary key (vila_id, alvo_id),
+  check (vila_id <> alvo_id)
+);
+
+-- ── Aba 5 — o que ESTA vila pensa sobre as outras ──────────────────────────
+-- Diferente de `vila_relacao` (que é o fato político), isto é a opinião do
+-- povo: um texto e um percentual que anda de -100 (ódio) a +100 (admiração).
+create table if not exists public.vila_opiniao_externa (
+  id         uuid primary key default gen_random_uuid(),
+  vila_id    uuid not null references public.vila(id) on delete cascade,
+  alvo_id    uuid not null references public.vila(id) on delete cascade,
+  descricao  text,
+  percentual numeric(5,2) not null default 0 check (percentual >= -100 and percentual <= 100),
+  ordem      int not null default 0,
+  unique (vila_id, alvo_id),
+  check (vila_id <> alvo_id)
+);
+
+-- ── Aba 6 — temperamento popular em relação a outras raças ─────────────────
+-- "Nesta vila, os humanos sentem 60% de desconfiança pelos élficos."
+create table if not exists public.vila_temperamento (
+  id              uuid primary key default gen_random_uuid(),
+  vila_id         uuid not null references public.vila(id) on delete cascade,
+  raca_id         uuid not null references public.raca(id) on delete cascade,
+  temperamento_id uuid not null references public.temperamento(id) on delete cascade,
+  percentual      numeric(5,2) not null default 50 check (percentual >= 0 and percentual <= 100),
+  ordem           int not null default 0,
+  unique (vila_id, raca_id, temperamento_id)
+);
+
+-- ── Aba Raças — quais raças costumam aparecer por aqui ─────────────────────
+-- Distribuição, igual clima: sobe uma, as outras cedem espaço (mesmo gráfico
+-- de barra 100%, cores tiradas da própria raça). Vila sem linha nenhuma aqui
+-- é lida como "só Humano" — é o único povo que o jogo tem hoje.
+create table if not exists public.vila_raca (
+  vila_id    uuid not null references public.vila(id) on delete cascade,
+  raca_id    uuid not null references public.raca(id) on delete cascade,
+  percentual numeric(5,2) not null default 0 check (percentual >= 0 and percentual <= 100),
+  primary key (vila_id, raca_id)
+);
+
+-- ── Aba Celebridades — gente famosa desta vila ──────────────────────────────
+-- Hoje só nome + descrição, presa à vila por FK. Vira cadastro com menu
+-- próprio mais pra frente; por ora é uma tabela simples.
+create table if not exists public.celebridade (
+  id        uuid primary key default gen_random_uuid(),
+  vila_id   uuid not null references public.vila(id) on delete cascade,
+  nome      text not null,
+  descricao text,
+  ordem     int not null default 0,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists celebridade_vila_idx on public.celebridade(vila_id, ordem);
+
+-- ── Aba 4 — NÍVEL (o que antes era "cidade" como lugar jogável) ────────────
+-- A chave de verdade é VILA + NÍVEL + VARIAÇÃO. Normalmente 3 níveis por vila,
+-- com quantas variações se quiser dentro de cada um.
+--
+-- Cada nível carrega as três artes de cenário (dia/tarde/noite) do mesmo jeito
+-- que a tabela `cenario` — é o mesmo contrato de arte, só que ancorado na vila.
+create table if not exists public.nivel (
+  id       uuid primary key default gen_random_uuid(),
+  vila_id  uuid not null references public.vila(id) on delete cascade,
+  nivel    int not null check (nivel > 0),
+  variacao int not null check (variacao > 0),
+  nome     text,                     -- rótulo opcional ("Muralha externa")
+  descricao text,
+  arte_dia_id   uuid references public.asset(id),
+  arte_tarde_id uuid references public.asset(id),
+  arte_noite_id uuid references public.asset(id),
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  unique (vila_id, nivel, variacao)
+);
+create index if not exists nivel_vila_idx on public.nivel(vila_id, nivel, variacao);
+
+-- Opiniões do povo daquele nível. `tipo` decide o lado do gráfico:
+--   popular   → sobe (vai virar prompt POSITIVO)
+--   impopular → desce (vai virar prompt NEGATIVO)
+-- O `percentual` é editado FORA do modal, direto no gráfico.
+create table if not exists public.nivel_opiniao (
+  id         uuid primary key default gen_random_uuid(),
+  nivel_id   uuid not null references public.nivel(id) on delete cascade,
+  tipo       text not null check (tipo in ('popular','impopular')),
+  titulo     text not null,
+  descricao  text,
+  percentual numeric(5,2) not null default 50 check (percentual >= 0 and percentual <= 100),
+  ordem      int not null default 0
+);
+create index if not exists nivel_opiniao_idx on public.nivel_opiniao(nivel_id, tipo, ordem);
+
+-- ── LUGAR (era `cidade`) ───────────────────────────────────────────────────
+-- Nome solto que vai para o campo "Cidade" do passe e para a resposta de "de
+-- onde você veio". Continua sendo sorteado aleatoriamente — a diferença é que
+-- agora TODO lugar pertence a uma vila, então o mundo fica amarrado.
+create table if not exists public.lugar (
   id        uuid primary key default gen_random_uuid(),
   nome      text not null unique,
-  regiao_id uuid references public.regiao(id) on delete set null,
+  vila_id   uuid references public.vila(id) on delete cascade,
   criado_em timestamptz not null default now()
 );
+
+-- Lugares órfãos da versão anterior adotam a primeira vila; depois disso a
+-- coluna vira obrigatória. Se não existe vila nenhuma ainda, fica como está e
+-- a trava entra na próxima rodada do schema.
+do $$
+declare primeira uuid;
+begin
+  select id into primeira from public.vila order by ordem, nome limit 1;
+  if primeira is not null then
+    update public.lugar set vila_id = primeira where vila_id is null;
+  end if;
+  if not exists (select 1 from public.lugar where vila_id is null) then
+    alter table public.lugar alter column vila_id set not null;
+  end if;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- DOCUMENTOS
 --
 -- O "selo do Rei" deixou de ser um campo booleano do passe e virou um TIPO DE
--- DOCUMENTO como outro qualquer. Consequência: cada região pode exigir papéis
+-- DOCUMENTO como outro qualquer. Consequência: cada vila pode exigir papéis
 -- diferentes (carta da guilda, salvo-conduto, mandado) sem nenhuma lógica nova.
 --
 -- ⚠️ A falsificação continua tendo que ser visível A OLHO NU: o documento
@@ -301,13 +633,13 @@ create table if not exists public.tipo_documento_campo (
 create index if not exists tipo_documento_campo_idx
   on public.tipo_documento_campo(tipo_documento_id, ordem);
 
--- Quais papéis cada região cobra. É aqui que "variedade de documento por
--- região" acontece, sem tocar em código.
-create table if not exists public.regiao_documento (
-  regiao_id uuid not null references public.regiao(id) on delete cascade,
+-- Quais papéis cada vila cobra. É aqui que "variedade de documento por vila"
+-- acontece, sem tocar em código.
+create table if not exists public.vila_documento (
+  vila_id uuid not null references public.vila(id) on delete cascade,
   tipo_documento_id uuid not null references public.tipo_documento(id) on delete cascade,
   exigido   boolean not null default true,
-  primary key (regiao_id, tipo_documento_id)
+  primary key (vila_id, tipo_documento_id)
 );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -387,21 +719,49 @@ create table if not exists public.profissao_fala (
 );
 create index if not exists profissao_fala_idx on public.profissao_fala(profissao_id, tipo);
 
--- Vocabulário solto que a geração sorteia.
+-- Vocabulário solto que a geração sorteia. Agora por RAÇA: nome élfico não sai
+-- na boca de um humano. `raca_id` nulo = serve para todas as raças.
 create table if not exists public.vocabulario (
   id    uuid primary key default gen_random_uuid(),
   tipo  text not null check (tipo in (
     'nome_masculino','nome_feminino','sobrenome','fala_neutra','resposta_origem'
   )),
   texto text not null,
+  raca_id uuid references public.raca(id) on delete cascade,
   ordem int not null default 0,
   unique (tipo, texto)
 );
+alter table public.vocabulario add column if not exists raca_id uuid references public.raca(id) on delete cascade;
 create index if not exists vocabulario_tipo_idx on public.vocabulario(tipo, ordem);
+create index if not exists vocabulario_raca_idx on public.vocabulario(raca_id, tipo, ordem);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MIGRAÇÃO — conteúdo de personagem sem raça vira Humano (ago/2026)
+--
+-- Antes de raça existir, todo conteúdo de personagem era implicitamente
+-- humano. Joga esse legado pra dentro do Humano explicitamente — MENOS as
+-- falas (fala_neutra, resposta_origem), que continuam genéricas de propósito.
+--
+-- ⚠️ Roda toda vez que este arquivo é colado: uma peça/paleta/nome que você
+-- deixar sem raça de propósito DEPOIS desta migração também vai ser puxada
+-- pro Humano na próxima colada do schema.sql. Cole só quando for aplicar
+-- mudança nova, não como rotina.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+declare humano_id uuid;
+begin
+  select id into humano_id from public.raca where codigo = 1;
+  if humano_id is not null then
+    update public.paleta set raca_id = humano_id where raca_id is null;
+    update public.peca   set raca_id = humano_id where raca_id is null;
+    update public.vocabulario set raca_id = humano_id
+      where raca_id is null and tipo in ('nome_masculino', 'nome_feminino', 'sobrenome');
+  end if;
+end $$;
 
 -- ── REGRAS: a condição é DADO, não código ──────────────────────────────────
 -- `condicao` é uma árvore JSON avaliada por um interpretador puro no jogo.
--- Ex.: {"e":[{"seloAutentico":true},{"campoPreenchido":"profissao"}]}
+-- Ex.: {"e":[{"documentoAutentico":"passe"},{"campoPreenchido":"profissao"}]}
 -- ⚠️ Toda regra tem que ser verificável A OLHO NU pelo jogador.
 create table if not exists public.regra (
   id       uuid primary key default gen_random_uuid(),
@@ -461,7 +821,7 @@ create table if not exists public.missao (
   id        uuid primary key default gen_random_uuid(),
   chave     text not null unique,
   nome      text not null,
-  regiao_id uuid references public.regiao(id) on delete set null,
+  vila_id   uuid references public.vila(id) on delete set null,
   classe    text not null default 'F' check (classe in ('tutorial','F','E','D','C','B','A','S')),
   evento    text,
   problemas text[] not null default '{}',
@@ -479,6 +839,10 @@ create table if not exists public.missao (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.missao add column if not exists vila_id uuid references public.vila(id) on delete set null;
+
+-- Em que NÍVEL da vila a missão acontece. Nulo = a vila inteira decide.
+alter table public.missao add column if not exists nivel_id uuid references public.nivel(id) on delete set null;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AJUSTES GLOBAIS DO JOGO (o que hoje é data/timelapse.ts etc.)
@@ -488,15 +852,13 @@ create table if not exists public.ajustes_jogo (
   timelapse_segundos_por_momento int not null default 20 check (timelapse_segundos_por_momento > 0),
   timelapse_segundos_de_fade     int not null default 4  check (timelapse_segundos_de_fade >= 0),
   timelapse_ativo                boolean not null default true,
-  cor_selo_autentica  text not null default 'vermelho',
-  cores_selo_falsas   text[] not null default '{azul,verde,roxo,laranja,preto}',
   atualizado_em timestamptz not null default now()
 );
 insert into public.ajustes_jogo (id) values (1) on conflict (id) do nothing;
 
 -- A cor do selo saiu daqui e foi para o TIPO DE DOCUMENTO: cada papel declara a
--- própria cera autêntica, e é isso que permite variedade de documento por
--- região. (Migração de bancos que já rodaram a versão anterior.)
+-- própria cera autêntica, e é isso que permite variedade de documento por vila.
+-- (Migração de bancos que já rodaram a versão anterior.)
 alter table public.ajustes_jogo drop column if exists cor_selo_autentica;
 alter table public.ajustes_jogo drop column if exists cores_selo_falsas;
 
@@ -529,8 +891,9 @@ declare t text;
 begin
   foreach t in array array[
     'config','paleta','grupo_camada','peca','cenario','som','ambiente_sonoro',
-    'regiao','item_bolsa','marca','profissao','regra','cartaz','perfil_geracao',
-    'missao','sombra','ajustes_jogo','tipo_documento','mapa_mundi'
+    'vila','item_bolsa','marca','profissao','regra','cartaz','perfil_geracao',
+    'missao','sombra','ajustes_jogo','tipo_documento','mapa_mundi',
+    'raca','temperamento','clima','nivel','celebridade','protagonista'
   ] loop
     execute format(
       'drop trigger if exists trg_%1$s_atualizado on public.%1$s;

@@ -9,11 +9,17 @@ import { conferir } from '@/lib/publicacao';
 // no ar?".
 
 const CONTAGENS: { tabela: string; rotulo: string; href: string }[] = [
+  { tabela: 'protagonista', rotulo: 'Protagonistas', href: '/personagens/protagonistas' },
+  { tabela: 'raca', rotulo: 'Raças', href: '/personagens/racas' },
   { tabela: 'peca', rotulo: 'Peças de arte', href: '/personagens/pecas' },
-  { tabela: 'grupo_camada', rotulo: 'Grupos de camada', href: '/personagens/camadas' },
+  { tabela: 'grupo_camada', rotulo: 'Grupos de camada', href: '/config/camadas' },
   { tabela: 'paleta', rotulo: 'Paletas', href: '/personagens/paletas' },
-  { tabela: 'vocabulario', rotulo: 'Nomes e falas', href: '/personagens/vocabulario' },
-  { tabela: 'regiao', rotulo: 'Regiões', href: '/mundo/regioes' },
+  { tabela: 'vocabulario', rotulo: 'Nomes e falas', href: '/personagens/nomes' },
+  { tabela: 'temperamento', rotulo: 'Temperamentos', href: '/gameplay/temperamentos' },
+  { tabela: 'vila', rotulo: 'Vilas', href: '/mundo/vilas' },
+  { tabela: 'nivel', rotulo: 'Níveis', href: '/mundo/vilas' },
+  { tabela: 'lugar', rotulo: 'Lugares', href: '/mundo/lugares' },
+  { tabela: 'clima', rotulo: 'Climas', href: '/mundo/climas' },
   { tabela: 'cenario', rotulo: 'Cenários', href: '/mundo/cenarios' },
   { tabela: 'som', rotulo: 'Sons', href: '/mundo/sons' },
   { tabela: 'profissao', rotulo: 'Profissões', href: '/gameplay/profissoes' },

@@ -6,7 +6,19 @@ import { Castle, CircleHelp, Drama, LogOut, Map, Settings, UploadCloud, User } f
 import { sair } from '@/lib/acoes-auth';
 
 // O menu segue a divisão que combinamos: Personagens / Mundo / Gameplay /
-// Publicação. Cada seção é um pedaço do bundle que o jogo baixa.
+// Publicação / Configurações. Cada seção é um pedaço do bundle que o jogo baixa.
+//
+// Decisões de ago/2026 estão desenhadas aqui:
+//   · CAMADAS saiu de Personagens e foi para Configurações — a ordem de
+//     empilhamento é geral do jogo, não de uma raça, então não pertence a uma
+//     tela que filtra por raça.
+//   · RAÇAS fecha a seção Personagens: é o que as outras telas filtram.
+//   · TEMPERAMENTOS saiu de Personagens e foi para Gameplay — é vocabulário
+//     GERAL (sem raça própria), consumido pela Aba Temperamento da Vila.
+//   · PROTAGONISTAS abre a seção Personagens — é o elenco fixo do jogo, o
+//     primeiro lugar onde alguém novo no time entende quem já existe.
+//   · NOMES e FALAS eram uma tela só ("Nomes e falas"); viraram dois itens de
+//     menu lado a lado — mesma tabela `vocabulario`, filtrada por tipo.
 
 type Item = { href: string; rotulo: string };
 type Secao = { rotulo: string; icone: React.ReactNode; itens: Item[] };
@@ -16,20 +28,23 @@ const SECOES: Secao[] = [
     rotulo: 'Personagens',
     icone: <User size={17} />,
     itens: [
+      { href: '/personagens/protagonistas', rotulo: 'Protagonistas' },
       { href: '/personagens/paletas', rotulo: 'Paletas de cor' },
-      { href: '/personagens/camadas', rotulo: 'Camadas' },
       { href: '/personagens/pecas', rotulo: 'Peças' },
-      { href: '/personagens/vocabulario', rotulo: 'Nomes e falas' },
+      { href: '/personagens/nomes', rotulo: 'Nomes' },
+      { href: '/personagens/falas', rotulo: 'Falas' },
+      { href: '/personagens/racas', rotulo: 'Raças' },
     ],
   },
   {
     rotulo: 'Mundo',
     icone: <Map size={17} />,
     itens: [
-      { href: '/mundo/regioes', rotulo: 'Regiões' },
-      { href: '/mundo/cidades', rotulo: 'Cidades' },
+      { href: '/mundo/vilas', rotulo: 'Vilas' },
+      { href: '/mundo/lugares', rotulo: 'Lugares' },
       { href: '/mundo/cenarios', rotulo: 'Cenários' },
       { href: '/mundo/sons', rotulo: 'Sons' },
+      { href: '/mundo/climas', rotulo: 'Climas' },
     ],
   },
   {
@@ -40,6 +55,7 @@ const SECOES: Secao[] = [
       { href: '/gameplay/profissoes', rotulo: 'Profissões' },
       { href: '/gameplay/itens', rotulo: 'Itens de bolsa' },
       { href: '/gameplay/marcas', rotulo: 'Marcas' },
+      { href: '/gameplay/temperamentos', rotulo: 'Temperamentos' },
       { href: '/gameplay/regras', rotulo: 'Regras' },
       { href: '/gameplay/cartazes', rotulo: 'Cartazes' },
       { href: '/gameplay/perfis', rotulo: 'Perfis de geração' },
@@ -52,6 +68,14 @@ const SECOES: Secao[] = [
     itens: [
       { href: '/publicar', rotulo: 'Publicar' },
       { href: '/publicar/versoes', rotulo: 'Versões' },
+    ],
+  },
+  {
+    rotulo: 'Configurações',
+    icone: <Settings size={17} />,
+    itens: [
+      { href: '/config', rotulo: 'Ajustes gerais' },
+      { href: '/config/camadas', rotulo: 'Camadas' },
     ],
   },
 ];
@@ -87,9 +111,11 @@ export function BarraLateral({ email }: { email: string }) {
             </div>
             <ul>
               {secao.itens.map((item) => {
+                // `/publicar` e `/config` têm sub-rotas próprias no menu, então
+                // só acendem no match exato — senão os dois ficariam ativos.
+                const exato = item.href === '/publicar' || item.href === '/config';
                 const ativo =
-                  caminho === item.href ||
-                  (item.href !== '/publicar' && caminho.startsWith(item.href + '/'));
+                  caminho === item.href || (!exato && caminho.startsWith(item.href + '/'));
                 return (
                   <li key={item.href}>
                     <Link
@@ -113,7 +139,6 @@ export function BarraLateral({ email }: { email: string }) {
 
       {/* ── rodapé ────────────────────────────────────────────────────────── */}
       <div className="border-t border-white/8 px-3 py-4">
-        <Rodape href="/config" icone={<Settings size={17} />} rotulo="Settings" ativo={caminho === '/config'} />
         <Rodape href="/ajuda" icone={<CircleHelp size={17} />} rotulo="Support" ativo={caminho === '/ajuda'} />
 
         <form action={sair} className="mt-3 border-t border-white/8 pt-3">

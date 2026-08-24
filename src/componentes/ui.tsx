@@ -110,6 +110,47 @@ export function SchemaFaltando() {
   );
 }
 
+/**
+ * As abas de uma tela de detalhe (hoje: a página da Vila).
+ *
+ * Controlado de propósito — quem guarda a aba ativa é a tela, porque ela também
+ * precisa saber disso pra decidir o que já foi editado. Sem estado aqui, o
+ * componente continua servindo a um arquivo sem `use client`.
+ */
+export function Abas<T extends string>({
+  abas,
+  ativa,
+  aoTrocar,
+}: {
+  abas: { chave: T; rotulo: string; contador?: number }[];
+  ativa: T;
+  aoTrocar: (chave: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5 border-b border-borda px-8 py-4">
+      {abas.map((a) => {
+        const ligada = a.chave === ativa;
+        return (
+          <button
+            key={a.chave}
+            onClick={() => aoTrocar(a.chave)}
+            aria-current={ligada ? 'page' : undefined}
+            className={[
+              'rounded-md border px-3.5 py-2 text-[13px] font-bold transition-colors',
+              ligada
+                ? 'border-ouro-escuro bg-ouro/25 text-tinta'
+                : 'border-borda text-tinta-fraca hover:border-borda-forte hover:text-tinta',
+            ].join(' ')}
+          >
+            {a.rotulo}
+            {a.contador !== undefined && <span className="ml-1.5 opacity-55">{a.contador}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Etiqueta de contagem, usada nos cabeçalhos de lista. */
 export function Contador({ n, singular, plural }: { n: number; singular: string; plural: string }) {
   return (

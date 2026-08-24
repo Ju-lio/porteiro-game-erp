@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { MapPin, X } from 'lucide-react';
-import type { Regiao } from '@/lib/tipos';
+import type { Vila } from '@/lib/tipos';
 import { urlAsset } from '@/lib/url';
 
 export type Posicao = { x: number; y: number };
@@ -29,13 +29,13 @@ function pontoDeControle(p1: Posicao, p2: Posicao, chave: string): Posicao {
 }
 
 /**
- * O mapa em si: imagem + trilhas entre regiões ligadas + pinos. Usado tanto
+ * O mapa em si: imagem + trilhas entre vilas ligadas + pinos. Usado tanto
  * pelo editor quanto pelo visualizador, sempre do mesmo jeito — é o que
  * garante que os dois nunca mais saem de proporção um do outro.
  */
 export function MapaCanvas({
   mapaUrl,
-  regioes,
+  vilas,
   posicoes,
   caminhos,
   interativo = false,
@@ -44,14 +44,14 @@ export function MapaCanvas({
   arrastando = null,
   aoClicarMapa,
   aoClicarVazio,
-  aoClicarRegiao,
+  aoClicarVila,
   aoIniciarArraste,
   aoMoverArraste,
   aoSoltarArraste,
   aoRemoverPosicao,
 }: {
   mapaUrl: string;
-  regioes: Regiao[];
+  vilas: Vila[];
   posicoes: Record<string, Posicao>;
   caminhos: Record<string, string>;
   interativo?: boolean;
@@ -60,7 +60,7 @@ export function MapaCanvas({
   arrastando?: string | null;
   aoClicarMapa?: (pos: Posicao) => void;
   aoClicarVazio?: () => void;
-  aoClicarRegiao?: (id: string) => void;
+  aoClicarVila?: (id: string) => void;
   aoIniciarArraste?: (id: string) => void;
   aoMoverArraste?: (id: string, pos: Posicao) => void;
   aoSoltarArraste?: (id: string, pos: Posicao | null) => void;
@@ -79,10 +79,10 @@ export function MapaCanvas({
     return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) };
   }
 
-  const posicionadas = regioes.filter((r) => posicoes[r.id]);
+  const posicionadas = vilas.filter((r) => posicoes[r.id]);
   const idsPosicionados = new Set(posicionadas.map((r) => r.id));
 
-  const trilhas: { a: Regiao; b: Regiao }[] = [];
+  const trilhas: { a: Vila; b: Vila }[] = [];
   const vistos = new Set<string>();
   for (const r of posicionadas) {
     for (const destinoId of r.ligacoes ?? []) {
@@ -90,7 +90,7 @@ export function MapaCanvas({
       const chave = [r.id, destinoId].sort().join('|');
       if (vistos.has(chave)) continue;
       vistos.add(chave);
-      const destino = regioes.find((x) => x.id === destinoId);
+      const destino = vilas.find((x) => x.id === destinoId);
       if (destino) trilhas.push({ a: r, b: destino });
     }
   }
@@ -206,7 +206,7 @@ export function MapaCanvas({
             }
             onClick={(e) => {
               e.stopPropagation();
-              if (interativo) aoClicarRegiao?.(r.id);
+              if (interativo) aoClicarVila?.(r.id);
             }}
             style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
             className={[
@@ -223,7 +223,7 @@ export function MapaCanvas({
               {r.nome}
             </span>
 
-            {/* o hoverzinho: um halo na cor predominante da região */}
+            {/* o hoverzinho: um halo na cor predominante da vila */}
             <span
               aria-hidden
               className="pointer-events-none absolute top-1/2 left-1/2 -z-10 -translate-x-1/2 -translate-y-1/2 rounded-full blur-xl transition-all duration-200"
@@ -239,7 +239,7 @@ export function MapaCanvas({
               <span
                 aria-hidden
                 className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ouro"
-                style={{ width: iconeUrl ? 168 : 56, height: iconeUrl ? 168 : 56 }}
+                style={{ width: iconeUrl ? 10 : 56, height: iconeUrl ? 10 : 56 }}
               />
             )}
 

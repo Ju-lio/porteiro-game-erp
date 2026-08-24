@@ -6,14 +6,14 @@ import { MapPin, Route, X } from 'lucide-react';
 import { Upload } from '@/componentes/Upload';
 import { Aviso } from '@/componentes/ui';
 import { salvar, trocarLigacoes } from '@/lib/acoes';
-import type { Regiao } from '@/lib/tipos';
+import type { Vila } from '@/lib/tipos';
 import { MapaCanvas, type Posicao } from './MapaCanvas';
 
-const CAMINHO = '/mundo/regioes';
+const CAMINHO = '/mundo/vilas';
 
 /**
  * Editor visual do mapa-múndi, tela cheia — mesmo palco do visualizador
- * (`MapaCanvas`), só que interativo: clicar numa região sem posição a
+ * (`MapaCanvas`), só que interativo: clicar numa vila sem posição a
  * "arma"; clicar no mapa a planta ali. Pino já plantado se arrasta
  * livremente. Clicar num pino plantado (sem arrastar) o seleciona e abre,
  * na lateral, os caminhos possíveis a partir dele.
@@ -21,20 +21,20 @@ const CAMINHO = '/mundo/regioes';
 export function EditorMapa({
   aberto,
   aoFechar,
-  regioes,
+  vilas,
   mapaUrl,
   caminhos,
 }: {
   aberto: boolean;
   aoFechar: () => void;
-  regioes: Regiao[];
+  vilas: Vila[];
   mapaUrl: string | null;
   caminhos: Record<string, string>;
 }) {
   const [url, setUrl] = useState(mapaUrl);
   const [posicoes, setPosicoes] = useState<Record<string, Posicao>>(() => {
     const p: Record<string, Posicao> = {};
-    for (const r of regioes) {
+    for (const r of vilas) {
       if (r.pos_x !== null && r.pos_y !== null) p[r.id] = { x: r.pos_x, y: r.pos_y };
     }
     return p;
@@ -45,14 +45,14 @@ export function EditorMapa({
   const [erro, setErro] = useState<string | null>(null);
   const [, iniciar] = useTransition();
 
-  const semPosicao = regioes.filter((r) => !posicoes[r.id]);
-  const regiaoSelecionada = regioes.find((r) => r.id === selecionada) ?? null;
-  const outrasDaSelecionada = regioes.filter((r) => r.id !== selecionada);
+  const semPosicao = vilas.filter((r) => !posicoes[r.id]);
+  const vilaSelecionada = vilas.find((r) => r.id === selecionada) ?? null;
+  const outrasDaSelecionada = vilas.filter((r) => r.id !== selecionada);
 
   function persistirPosicao(id: string, pos: Posicao | null) {
     iniciar(async () => {
       const r = await salvar(
-        'regiao',
+        'vila',
         {
           id,
           pos_x: pos ? Math.round(pos.x) : null,
@@ -113,16 +113,16 @@ export function EditorMapa({
   }
 
   function alternarCaminho(destinoId: string) {
-    if (!regiaoSelecionada) return;
-    const atuais = regiaoSelecionada.ligacoes ?? [];
+    if (!vilaSelecionada) return;
+    const atuais = vilaSelecionada.ligacoes ?? [];
     const novas = atuais.includes(destinoId)
       ? atuais.filter((x) => x !== destinoId)
       : [...atuais, destinoId];
     iniciar(async () => {
       const r = await trocarLigacoes(
-        'regiao_ligacao',
-        'regiao_id',
-        regiaoSelecionada.id,
+        'vila_ligacao',
+        'vila_id',
+        vilaSelecionada.id,
         novas.map((destino_id) => ({ destino_id })),
         CAMINHO,
       );
@@ -137,7 +137,7 @@ export function EditorMapa({
         <Dialog.Content className="surgir fixed inset-4 z-50 flex overflow-hidden rounded-xl border border-borda-forte outline-none">
           <Dialog.Title className="sr-only">Mapa do mundo</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Editor visual do mapa: posicione as regiões e os caminhos entre elas.
+            Editor visual do mapa: posicione as vilas e os caminhos entre elas.
           </Dialog.Description>
 
           <Dialog.Close
@@ -158,7 +158,7 @@ export function EditorMapa({
                 <Upload
                   perfil="livre"
                   rotulo="Imagem base do mapa"
-                  ajuda="Um PNG do mapa em branco, sem marcações. Depois é só arrastar cada região pro lugar certo."
+                  ajuda="Um PNG do mapa em branco, sem marcações. Depois é só arrastar cada vila pro lugar certo."
                   aoEnviar={aoEnviarMapa}
                 />
               </div>
@@ -168,7 +168,7 @@ export function EditorMapa({
               <div className="flex flex-1 items-center justify-center overflow-hidden bg-breu p-8">
                 <MapaCanvas
                   mapaUrl={url}
-                  regioes={regioes}
+                  vilas={vilas}
                   posicoes={posicoes}
                   caminhos={caminhos}
                   interativo
@@ -177,7 +177,7 @@ export function EditorMapa({
                   arrastando={arrastando}
                   aoClicarMapa={aoClicarMapa}
                   aoClicarVazio={() => setSelecionada(null)}
-                  aoClicarRegiao={(id) => setSelecionada(selecionada === id ? null : id)}
+                  aoClicarVila={(id) => setSelecionada(selecionada === id ? null : id)}
                   aoIniciarArraste={iniciarArraste}
                   aoMoverArraste={moverArraste}
                   aoSoltarArraste={soltarArraste}
@@ -188,7 +188,7 @@ export function EditorMapa({
               <div className="pergaminho flex w-80 shrink-0 flex-col overflow-y-auto border-l border-borda-forte p-6 md:w-96">
                 <h2 className="titulo text-oxido mb-1 text-[22px]">Mapa do mundo</h2>
                 <p className="mb-5 text-[12px] leading-relaxed text-tinta-fraca">
-                  Clique numa região sem posição e depois no mapa pra plantar. Pino já plantado
+                  Clique numa vila sem posição e depois no mapa pra plantar. Pino já plantado
                   se arrasta. Clique num pino pra ver e editar os caminhos dele.
                 </p>
 
@@ -198,11 +198,11 @@ export function EditorMapa({
                   </div>
                 )}
 
-                {regiaoSelecionada ? (
+                {vilaSelecionada ? (
                   <div className="mb-5 rounded-md border border-ouro-escuro/50 bg-ouro/10 p-4">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 text-[13px] font-bold text-tinta">
-                        <Route size={14} /> Caminhos de {regiaoSelecionada.nome}
+                        <Route size={14} /> Caminhos de {vilaSelecionada.nome}
                       </span>
                       <button
                         type="button"
@@ -213,11 +213,11 @@ export function EditorMapa({
                       </button>
                     </div>
                     {outrasDaSelecionada.length === 0 ? (
-                      <p className="text-[12px] text-tinta-fraca">Nenhuma outra região ainda.</p>
+                      <p className="text-[12px] text-tinta-fraca">Nenhuma outra vila ainda.</p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {outrasDaSelecionada.map((o) => {
-                          const ativo = (regiaoSelecionada.ligacoes ?? []).includes(o.id);
+                          const ativo = (vilaSelecionada.ligacoes ?? []).includes(o.id);
                           return (
                             <button
                               key={o.id}
@@ -239,10 +239,10 @@ export function EditorMapa({
                   </div>
                 ) : (
                   <div className="mb-5">
-                    <span className="rotulo mb-1.5 block">Regiões sem posição</span>
+                    <span className="rotulo mb-1.5 block">Vilas sem posição</span>
                     {semPosicao.length === 0 ? (
                       <p className="text-[12px] text-tinta-fraca">
-                        Todas as regiões já estão no mapa.
+                        Todas as vilas já estão no mapa.
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">

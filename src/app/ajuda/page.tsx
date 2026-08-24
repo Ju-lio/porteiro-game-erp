@@ -88,8 +88,8 @@ export default function Ajuda() {
             parede precisa anunciar a cor certa, senão o jogador não tem como saber.
           </p>
           <p className="mt-3 text-[13px] leading-relaxed text-tinta-fraca">
-            A região escolhe quais papéis o portão cobra. Documento novo é uma linha, não uma
-            mecânica nova.
+            A vila escolhe quais papéis o portão cobra (Vilas › aba Identidade). Documento novo
+            é uma linha, não uma mecânica nova.
           </p>
         </Caixa>
 

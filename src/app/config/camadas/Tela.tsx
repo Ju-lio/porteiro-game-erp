@@ -21,7 +21,9 @@ import type { GrupoCamada, Paleta, SubCamada, TipoSubCamada } from '@/lib/tipos'
 // (uma bolsa, um chapéu) entra arrastando, sem renumerar nada.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CAMINHO = '/personagens/camadas';
+// Camadas mora em Configurações (e não em Personagens) de propósito: a ordem
+// de empilhamento é geral do jogo, não muda de raça pra raça.
+const CAMINHO = '/config/camadas';
 
 const TIPOS: { valor: TipoSubCamada; rotulo: string; ajuda: string }[] = [
   {

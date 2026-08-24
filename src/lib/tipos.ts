@@ -10,6 +10,50 @@ export type Classe = 'tutorial' | 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
 
 export const CLASSES: Classe[] = ['tutorial', 'F', 'E', 'D', 'C', 'B', 'A', 'S'];
 
+// ═══════════════════════════════════════════════════════════════════════════
+// RAÇA — o eixo que atravessa todo o conteúdo de personagem
+//
+// `raca_id` NULO em paleta/peça/vocabulário/temperamento quer dizer "serve
+// para TODAS as raças". As telas mostram isso como o card "Todas" e sempre
+// abrem filtrando pela raça de CÓDIGO 1 (Humano).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type Raca = {
+  id: string;
+  /** Código interno SEQUENCIAL. Humano = 1, e é o filtro padrão das telas. */
+  codigo: number;
+  chave: string;
+  nome: string;
+  descricao: string | null;
+  /** Lista de textos livres — lore, não entidade com comportamento. */
+  etnias: string[];
+  cor: string | null;
+  ordem: number;
+};
+
+/** Toda tela de Personagem guarda a raça e filtra por ela. */
+export type ComRaca = { raca_id: string | null };
+
+/** Geral, sem raça própria — "desconfiança" é a mesma coisa em qualquer povo. */
+export type Temperamento = {
+  id: string;
+  chave: string;
+  nome: string;
+  descricao: string | null;
+  /** +1 sobe no gráfico da Aba Temperamento, -1 desce. */
+  sinal: 1 | -1;
+  cor: string | null;
+  ordem: number;
+};
+
+/** O elenco fixo do jogo — não sorteado. Simples de propósito: nome + descrição. */
+export type Protagonista = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  ordem: number;
+};
+
 export type Asset = {
   id: string;
   sha256: string;
@@ -27,6 +71,8 @@ export type Paleta = {
   chave: string;
   nome: string;
   descricao: string | null;
+  /** Nulo = paleta de todas as raças (couro do cinto, metal…). */
+  raca_id: string | null;
   ordem: number;
   cores?: Cor[];
 };
@@ -70,6 +116,8 @@ export type Peca = {
   chave: string;
   nome: string;
   genero: Genero | null;
+  /** Nulo = peça de todas as raças. */
+  raca_id: string | null;
   arquetipos: string[];
   conjunto: string | null;
   ativo: boolean;
@@ -112,12 +160,64 @@ export type AmbienteSonoro = {
   portao_id: string | null;
 };
 
-export type Regiao = {
+// ═══════════════════════════════════════════════════════════════════════════
+// VILA — o que antes se chamava "região"
+//
+// A vila é a unidade de mundo. Tudo pendura nela: níveis, documentos exigidos,
+// clima, relações políticas, opinião sobre as vizinhas e temperamento por raça.
+// Cada uma dessas coisas é uma ABA da página `/mundo/vilas/[id]`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** As quatro faixas do nível educacional. Somam 100 — subir uma abaixa as outras. */
+export type Educacao = {
+  educacao_analfabeto: number;
+  educacao_media: number;
+  educacao_acima: number;
+  educacao_alto: number;
+};
+
+export type FaixaEducacao = {
+  chave: keyof Educacao;
+  rotulo: string;
+  faixa: string;
+  termos: string;
+};
+
+/** Os termos vieram do briefing do Julio — é o vocabulário de lore da faixa. */
+export const FAIXAS_EDUCACAO: FaixaEducacao[] = [
+  {
+    chave: 'educacao_analfabeto',
+    rotulo: 'Analfabeto / Ignorante',
+    faixa: '0% – 20%',
+    termos: 'Analfabeto, Inculto, Ignorante, Rústico.',
+  },
+  {
+    chave: 'educacao_media',
+    rotulo: 'Educação na média',
+    faixa: '21% – 50%',
+    termos: 'Letrado básico, Instruído, Sábio de aldeia, Paroquiano.',
+  },
+  {
+    chave: 'educacao_acima',
+    rotulo: 'Acima da média',
+    faixa: '51% – 80%',
+    termos: 'Erudito, Estudioso, Clérigo menor, Escrivão.',
+  },
+  {
+    chave: 'educacao_alto',
+    rotulo: 'Muito alto / Rebuscado',
+    faixa: '81% – 100%',
+    termos: 'Sábio magistral, Filósofo real, Mestre arcano, Polímata.',
+  },
+];
+
+export type Vila = Educacao & {
   id: string;
   chave: string;
   nome: string;
   descricao: string | null;
   cor: string | null;
+  /** LEGADO: o texto livre de clima da versão anterior. Substituído por `climas`. */
   clima: string | null;
   pos_x: number | null;
   pos_y: number | null;
@@ -125,12 +225,100 @@ export type Regiao = {
   cenario_id: string | null;
   ambiente_sonoro_id: string | null;
   regras_especificas: string | null;
+  /** Aba 2 — como o reino funciona por dentro. */
+  politica_interna: string | null;
+  /** Aba 3 — costumes do povo. */
+  costumes: string | null;
   ordem: number;
   ligacoes?: string[];
   documentos?: string[];
 };
 
-export type Cidade = { id: string; nome: string; regiao_id: string | null };
+export type TipoRelacao = 'oposicao' | 'alianca';
+
+/** Aba 2 — o fato político. Vila ausente daqui é NEUTRA por omissão. */
+export type VilaRelacao = { vila_id: string; alvo_id: string; tipo: TipoRelacao };
+
+/** Aba 1 — quanto cada clima aparece na vila. A soma deveria dar 100. */
+export type VilaClima = { vila_id: string; clima_id: string; percentual: number };
+
+/** Aba 5 — o que o povo DESTA vila pensa da vizinha. -100 (ódio) a +100 (admiração). */
+export type VilaOpiniaoExterna = {
+  id: string;
+  vila_id: string;
+  alvo_id: string;
+  descricao: string | null;
+  percentual: number;
+  ordem: number;
+};
+
+/** Aba Temperamento — quanto desta vila sente TAL temperamento por TAL raça. */
+export type VilaTemperamento = {
+  id: string;
+  vila_id: string;
+  raca_id: string;
+  temperamento_id: string;
+  percentual: number;
+  ordem: number;
+};
+
+/** Aba Raças — distribuição de quais raças aparecem por aqui. Soma deveria dar 100. */
+export type VilaRaca = { vila_id: string; raca_id: string; percentual: number };
+
+/** Aba Celebridades — gente famosa da vila. Simples de propósito. */
+export type Celebridade = {
+  id: string;
+  vila_id: string;
+  nome: string;
+  descricao: string | null;
+  ordem: number;
+};
+
+export type Clima = {
+  id: string;
+  chave: string;
+  nome: string;
+  descricao: string | null;
+  icone: string;
+  cor: string | null;
+  ordem: number;
+};
+
+// ── NÍVEL (o que antes era "cidade" como lugar jogável) ────────────────────
+// A chave de verdade é VILA + NÍVEL + VARIAÇÃO. Normalmente 3 níveis por vila.
+
+export type Nivel = {
+  id: string;
+  vila_id: string;
+  nivel: number;
+  variacao: number;
+  nome: string | null;
+  descricao: string | null;
+  arte_dia_id: string | null;
+  arte_tarde_id: string | null;
+  arte_noite_id: string | null;
+  opinioes?: NivelOpiniao[];
+};
+
+export type TipoOpiniao = 'popular' | 'impopular';
+
+/** `tipo` decide o lado do gráfico: popular sobe, impopular desce. */
+export type NivelOpiniao = {
+  id: string;
+  nivel_id: string;
+  tipo: TipoOpiniao;
+  titulo: string;
+  descricao: string | null;
+  percentual: number;
+  ordem: number;
+};
+
+/**
+ * LUGAR (era `cidade`) — nome solto que vai para o campo "Cidade" do passe e
+ * para a resposta de "de onde você veio". Continua sorteado aleatoriamente; a
+ * diferença é que agora TODO lugar pertence a uma vila.
+ */
+export type Lugar = { id: string; nome: string; vila_id: string | null };
 
 export type MapaMundi = { asset_id: string | null };
 
@@ -224,7 +412,14 @@ export type TipoVocabulario =
   | 'fala_neutra'
   | 'resposta_origem';
 
-export type Vocabulario = { id: string; tipo: TipoVocabulario; texto: string; ordem: number };
+export type Vocabulario = {
+  id: string;
+  tipo: TipoVocabulario;
+  texto: string;
+  /** Nulo = vale para todas as raças. */
+  raca_id: string | null;
+  ordem: number;
+};
 
 export type Regra = {
   id: string;
@@ -263,7 +458,9 @@ export type Missao = {
   id: string;
   chave: string;
   nome: string;
-  regiao_id: string | null;
+  vila_id: string | null;
+  /** Em que nível da vila a missão acontece. Nulo = a vila inteira decide. */
+  nivel_id: string | null;
   classe: Classe;
   evento: string | null;
   problemas: string[];

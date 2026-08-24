@@ -2,31 +2,31 @@
 
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import type { Regiao } from '@/lib/tipos';
+import type { Vila } from '@/lib/tipos';
 import { MapaCanvas, type Posicao } from './MapaCanvas';
 
 /**
  * Só olhar: o mesmo `MapaCanvas` do editor, sem interatividade — é o que
  * garante que editor e visualizador nunca mais saem de proporção um do
- * outro. Passar o mouse numa região mostra o nome e um halo na cor dela.
+ * outro. Passar o mouse numa vila mostra o nome e um halo na cor dela.
  */
 export function VisualizarMapa({
   aberto,
   aoFechar,
-  regioes,
+  vilas,
   mapaUrl,
   caminhos,
 }: {
   aberto: boolean;
   aoFechar: () => void;
-  regioes: Regiao[];
+  vilas: Vila[];
   mapaUrl: string | null;
   caminhos: Record<string, string>;
 }) {
   if (!mapaUrl) return null;
 
   const posicoes: Record<string, Posicao> = {};
-  for (const r of regioes) {
+  for (const r of vilas) {
     if (r.pos_x !== null && r.pos_y !== null) posicoes[r.id] = { x: r.pos_x, y: r.pos_y };
   }
 
@@ -37,7 +37,7 @@ export function VisualizarMapa({
         <Dialog.Content className="surgir fixed inset-4 z-50 flex flex-col overflow-hidden rounded-xl border border-borda-forte bg-breu outline-none">
           <Dialog.Title className="sr-only">Mapa do mundo</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Visualização do mapa com as regiões posicionadas.
+            Visualização do mapa com as vilas posicionadas.
           </Dialog.Description>
 
           <Dialog.Close
@@ -48,7 +48,7 @@ export function VisualizarMapa({
           </Dialog.Close>
 
           <div className="flex flex-1 items-center justify-center overflow-hidden p-8">
-            <MapaCanvas mapaUrl={mapaUrl} regioes={regioes} posicoes={posicoes} caminhos={caminhos} />
+            <MapaCanvas mapaUrl={mapaUrl} vilas={vilas} posicoes={posicoes} caminhos={caminhos} />
           </div>
         </Dialog.Content>
       </Dialog.Portal>

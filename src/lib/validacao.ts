@@ -13,7 +13,10 @@ import type { Diagnostico, Problema } from './bundle';
 
 type Bundle = {
   personagem: {
-    paletas: { chave: unknown; cores: unknown[] }[];
+    racas: { chave: unknown; nome: unknown; codigo: unknown }[];
+    temperamentos: { chave: unknown; nome: unknown; sinal: number }[];
+    protagonistas: { nome: unknown }[];
+    paletas: { chave: unknown; cores: unknown[]; raca: unknown }[];
     grupos: {
       chave: unknown;
       nome: unknown;
@@ -21,7 +24,14 @@ type Bundle = {
       familia: unknown;
       subCamadas: { chave: unknown; nome: unknown; tipo: unknown; paleta: unknown; opcional: unknown }[];
     }[];
-    pecas: { chave: unknown; nome: unknown; grupo: unknown; conjunto: unknown; arquivos: Record<string, string> }[];
+    pecas: {
+      chave: unknown;
+      nome: unknown;
+      grupo: unknown;
+      conjunto: unknown;
+      raca: unknown;
+      arquivos: Record<string, string>;
+    }[];
     sombra: { arquivo: string | null } | null;
   };
   documentos: {
@@ -33,7 +43,25 @@ type Bundle = {
   }[];
   mundo: {
     cenarios: { chave: unknown; nome: unknown; dia: unknown; tarde: unknown; noite: unknown }[];
-    regioes: { nome: unknown; documentos: unknown[] }[];
+    vilas: {
+      chave: unknown;
+      nome: unknown;
+      documentos: unknown[];
+      climas: { clima: unknown; percentual: number }[];
+      relacoes: { vila: unknown; tipo: unknown }[];
+      educacao: { analfabeto: number; media: number; acima: number; alto: number };
+      niveis: {
+        nivel: number;
+        variacao: number;
+        nome: unknown;
+        cenario: { dia: unknown; tarde: unknown; noite: unknown };
+        opinioes: { tipo: unknown; titulo: unknown; percentual: number }[];
+      }[];
+      temperamentos: { raca: unknown; temperamento: unknown; percentual: number }[];
+      racas: { raca: unknown; percentual: number }[];
+      celebridades: { nome: unknown }[];
+    }[];
+    lugares: { nome: unknown; vila: unknown }[];
   };
   gameplay: {
     marcas: { chave: unknown; nome: unknown; topo: number; altura: number }[];
@@ -51,13 +79,22 @@ type Bundle = {
       chave: unknown;
       nome: unknown;
       classe: unknown;
+      vila: unknown;
       regra: unknown;
       perfilGeracao: unknown;
       fracaoParaAprovar: number;
     }[];
   };
-  vocabulario: { nomesMasculinos: string[]; nomesFemininos: string[]; sobrenomes: string[]; falasNeutras: string[] };
+  vocabulario: {
+    nomesMasculinos: Verbete[];
+    nomesFemininos: Verbete[];
+    sobrenomes: Verbete[];
+    falasNeutras: Verbete[];
+  };
 };
+
+/** Um verbete do vocabulário: o texto e a raça a que ele pertence (nulo = todas). */
+type Verbete = { texto: string; raca: string | null };
 
 /** A faixa visível do personagem: a cabine cobre daqui pra baixo. */
 const LIMITE_JANELA = 74;
@@ -106,9 +143,8 @@ export function validar(b: Bundle): Diagnostico {
   if (b.documentos.length === 0)
     aviso('Documentos', 'Nenhum documento cadastrado. O guarda não teria o que pedir.');
 
-  for (const r of b.mundo.regioes) {
-    if (r.documentos.length === 0)
-      aviso('Regiões', `“${r.nome}” não exige documento nenhum.`);
+  for (const v of b.mundo.vilas) {
+    if (v.documentos.length === 0) aviso('Vilas', `“${v.nome}” não exige documento nenhum.`);
   }
 
   // ── regras precisam de cartaz ──────────────────────────────────────────
@@ -239,16 +275,133 @@ export function validar(b: Bundle): Diagnostico {
   }
 
   // ── vocabulário ────────────────────────────────────────────────────────
+  // "Nomes e falas" viraram DOIS menus na tela (mesma tabela `vocabulario`,
+  // filtrada por tipo) — as mensagens de erro já refletem essa separação.
   const v = b.vocabulario;
   if (b.gameplay.missoes.length > 0) {
     if (v.nomesMasculinos.length === 0 && v.nomesFemininos.length === 0)
-      erro('Nomes e falas', 'Nenhum primeiro nome cadastrado — os visitantes chegariam sem nome no passe.');
-    if (v.sobrenomes.length === 0)
-      erro('Nomes e falas', 'Nenhum sobrenome cadastrado.');
+      erro('Nomes', 'Nenhum primeiro nome cadastrado — os visitantes chegariam sem nome no passe.');
+    if (v.sobrenomes.length === 0) erro('Nomes', 'Nenhum sobrenome cadastrado.');
     if (v.falasNeutras.length === 0)
-      aviso('Nomes e falas', 'Nenhuma fala de chegada. Os visitantes chegam mudos.');
+      aviso('Falas', 'Nenhuma fala de chegada. Os visitantes chegam mudos.');
     if (v.nomesMasculinos.length + v.nomesFemininos.length < 8)
-      aviso('Nomes e falas', 'Menos de 8 primeiros nomes: o elenco vai se repetir rápido num expediente.');
+      aviso('Nomes', 'Menos de 8 primeiros nomes: o elenco vai se repetir rápido num expediente.');
+  }
+
+  // ── raças ──────────────────────────────────────────────────────────────
+  // A regra que sustenta o filtro das telas: conteúdo com raça nula serve a
+  // TODAS. Uma raça só é jogável se, somando o dela com o genérico, dá pra
+  // montar um visitante e dar um nome a ele.
+  const racas = b.personagem.racas;
+  if (racas.length === 0)
+    erro('Raças', 'Nenhuma raça cadastrada. Todo conteúdo de personagem é filtrado por raça — sem nenhuma, as telas não têm o que mostrar.');
+  if (racas.length > 0 && !racas.some((r) => r.codigo === 1))
+    aviso('Raças', 'Nenhuma raça tem o código 1. As telas de Personagem abrem filtrando por ele e vão cair na primeira raça da lista.');
+
+  const nomesPorRaca = (lista: Verbete[], raca: unknown) =>
+    lista.filter((x) => x.raca === null || x.raca === raca).length;
+
+  for (const r of racas) {
+    const pecasDaRaca = b.personagem.pecas.filter((p) => p.raca === null || p.raca === r.chave);
+    if (pecasDaRaca.length === 0)
+      aviso('Raças', `“${r.nome}” não alcança peça de arte nenhuma — nem própria, nem genérica. Nenhum visitante dessa raça conseguiria ser montado.`);
+
+    const primeirosNomes =
+      nomesPorRaca(v.nomesMasculinos, r.chave) + nomesPorRaca(v.nomesFemininos, r.chave);
+    if (b.gameplay.missoes.length > 0 && primeirosNomes === 0)
+      aviso('Raças', `“${r.nome}” não tem primeiro nome nenhum (nem genérico). Um visitante dessa raça chegaria sem nome no passe.`);
+  }
+
+  // ── temperamentos ──────────────────────────────────────────────────────
+  for (const t of b.personagem.temperamentos) {
+    if (t.sinal !== 1 && t.sinal !== -1)
+      erro('Temperamentos', `“${t.nome}” tem um sinal inválido (${t.sinal}). O gráfico não saberia de que lado desenhar a coluna.`);
+  }
+
+  // ── vilas ──────────────────────────────────────────────────────────────
+  const chavesVila = new Set(b.mundo.vilas.map((x) => x.chave));
+
+  for (const vila of b.mundo.vilas) {
+    // Educação é distribuição: sem somar 100, "60% na média" não quer dizer nada.
+    const e = vila.educacao;
+    const somaEducacao = e.analfabeto + e.media + e.acima + e.alto;
+    if (Math.round(somaEducacao) !== 100)
+      erro('Vilas', `As faixas de educação de “${vila.nome}” somam ${Math.round(somaEducacao)}% — precisam somar 100, senão a distribuição não significa nada.`);
+
+    // Clima também é distribuição, mas aqui o jogo normaliza pela soma: dá pra
+    // publicar torto, só não é o que a pessoa quis dizer.
+    const somaClima = vila.climas.reduce((s, c) => s + c.percentual, 0);
+    if (vila.climas.length === 0) aviso('Vilas', `“${vila.nome}” não tem clima nenhum.`);
+    else if (Math.round(somaClima) !== 100)
+      aviso('Vilas', `Os climas de “${vila.nome}” somam ${Math.round(somaClima)}% em vez de 100. O jogo normaliza pela soma, então o que vale é a proporção.`);
+
+    // Uma vila sem nível não tem onde ser jogada.
+    if (vila.niveis.length === 0)
+      aviso('Vilas', `“${vila.nome}” não tem nível nenhum — não existe lugar jogável dentro dela.`);
+
+    for (const n of vila.niveis) {
+      const onde = `“${vila.nome}” nível ${n.nivel} · variação ${n.variacao}`;
+      // O cenário já vem resolvido: arte do nível ou, na falta, a da vila.
+      // Chegar aqui sem nada quer dizer que nem o nível nem a vila têm arte.
+      const faltando = [
+        !n.cenario.dia && 'dia',
+        !n.cenario.tarde && 'tarde',
+        !n.cenario.noite && 'noite',
+      ].filter(Boolean);
+      if (faltando.length === 3)
+        erro(
+          'Níveis',
+          `${onde} não tem arte nenhuma, e a vila também não tem cenário pra emprestar — a janela ficaria preta.`,
+        );
+      else if (faltando.length)
+        aviso('Níveis', `${onde} está sem a arte de ${faltando.join(' e ')}.`);
+
+      for (const o of n.opinioes) {
+        if (!String(o.titulo).trim())
+          erro('Níveis', `${onde} tem uma opinião sem título. Ela viraria um prompt vazio.`);
+      }
+    }
+
+    // Relação apontando pra vila que não existe mais (ou pra si mesma).
+    for (const rel of vila.relacoes) {
+      if (!rel.vila || !chavesVila.has(rel.vila))
+        erro('Vilas', `“${vila.nome}” tem uma relação com uma vila que não existe mais.`);
+      if (rel.tipo !== 'oposicao' && rel.tipo !== 'alianca')
+        erro('Vilas', `“${vila.nome}” tem uma relação sem tipo. Vila neutra é a que NÃO aparece na tabela — não existe linha "neutro".`);
+    }
+
+    for (const t of vila.temperamentos) {
+      if (!t.raca)
+        erro('Vilas', `“${vila.nome}” tem um temperamento apontando pra uma raça que não existe mais.`);
+      if (!t.temperamento)
+        erro('Vilas', `“${vila.nome}” tem uma linha de temperamento que não existe mais no cadastro.`);
+    }
+
+    // Raças é distribuição, igual clima: vila sem linha nenhuma é lida como
+    // "só Humano" pelo jogo, então não é erro — só clima e educação são
+    // obrigatórios de existir.
+    if (vila.racas.length > 0) {
+      const somaRacas = vila.racas.reduce((s, x) => s + x.percentual, 0);
+      if (Math.round(somaRacas) !== 100)
+        aviso('Vilas', `As raças de “${vila.nome}” somam ${Math.round(somaRacas)}% em vez de 100. O jogo normaliza pela soma, então o que vale é a proporção.`);
+    }
+    for (const r of vila.racas) {
+      if (!r.raca) erro('Vilas', `“${vila.nome}” tem uma linha de raça apontando pra uma raça que não existe mais.`);
+    }
+
+    for (const c of vila.celebridades) {
+      if (!String(c.nome).trim())
+        erro('Vilas', `“${vila.nome}” tem uma celebridade sem nome.`);
+    }
+  }
+
+  // ── lugares ────────────────────────────────────────────────────────────
+  // O lugar é o que preenche o campo "Cidade" do passe. Sem nenhum, o campo
+  // sairia vazio em todo visitante e a pista de cidade divergente sumiria.
+  if (b.gameplay.missoes.length > 0 && b.mundo.lugares.length === 0)
+    erro('Lugares', 'Nenhum lugar cadastrado — o campo Cidade do passe sairia vazio em todos os visitantes.');
+  for (const l of b.mundo.lugares) {
+    if (!l.vila) aviso('Lugares', `“${l.nome}” não pertence a nenhuma vila.`);
   }
 
   return { erros, avisos };
