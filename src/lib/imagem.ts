@@ -2,6 +2,9 @@
 // É o `scripts/organizar-personagens.py` do jogo, portado — quem desenha sobe a
 // arte e vê o resultado na hora, sem rodar script nenhum.
 
+import { sha256 } from './hash';
+import { storageDireto } from './supabase-browser';
+
 export type Dimensoes = { largura: number; altura: number };
 
 export async function dimensoes(arquivo: File | Blob): Promise<Dimensoes> {
@@ -54,17 +57,100 @@ export type RespostaUpload = {
   reusado: boolean;
 };
 
+/** A resposta de uma rota nossa é sempre JSON. Se não for, a requisição foi
+ * recusada ANTES do nosso código rodar — normalmente a hospedagem (Vercel)
+ * barrando por tamanho, o que chega como texto puro (ex.: "Request Entity Too
+ * Large"), não JSON. */
+async function lerJson(r: Response): Promise<Record<string, unknown>> {
+  const texto = await r.text();
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new Error(
+      r.status === 413
+        ? 'Arquivo grande demais para o servidor aceitar. Exporte mais leve (comprima ou reduza a resolução).'
+        : `Falha no upload (HTTP ${r.status}). Resposta inesperada do servidor.`,
+    );
+  }
+}
+
+/** Perfis grandes o bastante pra estourar o teto de ~4.5MB por requisição das
+ * funções serverless (Vercel) sobem DIRETO pro Storage via signed URL — o
+ * arquivo pesado nunca passa pela nossa função, só um token pequeno passa.
+ * `peca` fica de fora de propósito: é pequena (400KB de teto) e ganha
+ * validação de canvas a partir dos bytes reais do PNG, só possível no
+ * caminho antigo (server recebe o arquivo inteiro). */
+const PERFIS_UPLOAD_DIRETO = new Set(['cenario', 'som', 'livre']);
+
 export async function enviar(
   arquivo: File | Blob,
   perfil: 'peca' | 'cenario' | 'som' | 'livre',
   nome: string,
 ): Promise<RespostaUpload> {
-  const form = new FormData();
-  form.append('arquivo', arquivo instanceof File ? arquivo : new File([arquivo], nome, { type: 'image/png' }));
-  form.append('perfil', perfil);
+  const arquivoFinal =
+    arquivo instanceof File ? arquivo : new File([arquivo], nome, { type: 'image/png' });
 
-  const r = await fetch('/api/upload', { method: 'POST', body: form });
-  const json = await r.json();
-  if (!r.ok) throw new Error(json.erro ?? 'Falha no upload.');
-  return json as RespostaUpload;
+  if (!PERFIS_UPLOAD_DIRETO.has(perfil)) {
+    const form = new FormData();
+    form.append('arquivo', arquivoFinal);
+    form.append('perfil', perfil);
+
+    const r = await fetch('/api/upload', { method: 'POST', body: form });
+    const json = await lerJson(r);
+    if (!r.ok) throw new Error((json.erro as string) ?? 'Falha no upload.');
+    return json as unknown as RespostaUpload;
+  }
+
+  const bytes = new Uint8Array(await arquivoFinal.arrayBuffer());
+  const hash = await sha256(bytes);
+
+  let largura: number | null = null;
+  let altura: number | null = null;
+  if (perfil !== 'som') {
+    const d = await dimensoes(arquivoFinal);
+    largura = d.largura;
+    altura = d.altura;
+  }
+
+  const rAssinar = await fetch('/api/upload/assinar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      perfil,
+      hash,
+      nomeOriginal: arquivoFinal.name,
+      mime: arquivoFinal.type,
+      bytes: bytes.length,
+      largura,
+      altura,
+    }),
+  });
+  const assinado = await lerJson(rAssinar);
+  if (!rAssinar.ok) throw new Error((assinado.erro as string) ?? 'Falha ao preparar o upload.');
+  if (assinado.reusado) return assinado as unknown as RespostaUpload;
+
+  const { error: erroUpload } = await storageDireto.uploadToSignedUrl(
+    assinado.caminho as string,
+    assinado.token as string,
+    bytes,
+    { contentType: arquivoFinal.type || 'application/octet-stream', upsert: true },
+  );
+  if (erroUpload) throw new Error(`Falha ao subir pro Storage: ${erroUpload.message}`);
+
+  const rConcluir = await fetch('/api/upload/concluir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      caminho: assinado.caminho,
+      hash,
+      nomeOriginal: arquivoFinal.name,
+      mime: arquivoFinal.type,
+      bytes: bytes.length,
+      largura,
+      altura,
+    }),
+  });
+  const concluido = await lerJson(rConcluir);
+  if (!rConcluir.ok) throw new Error((concluido.erro as string) ?? 'Falha ao concluir o upload.');
+  return concluido as unknown as RespostaUpload;
 }

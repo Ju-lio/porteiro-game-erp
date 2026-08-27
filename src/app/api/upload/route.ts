@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { BUCKET, db, urlPublica } from '@/lib/supabase';
+import { sha256 } from '@/lib/hash';
 
 // Upload de asset: valida, calcula o sha256 e guarda com o hash no nome.
 //
@@ -18,11 +19,6 @@ function dimensoesPng(bytes: Uint8Array): { largura: number; altura: number } | 
   const ler = (o: number) =>
     (bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3];
   return { largura: ler(16) >>> 0, altura: ler(20) >>> 0 };
-}
-
-async function sha256(bytes: Uint8Array): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer);
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function config(): Promise<Record<string, unknown>> {

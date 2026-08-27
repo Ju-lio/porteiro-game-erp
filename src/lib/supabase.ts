@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@supabase/supabase-js';
+import { BUCKET } from './bucket';
 
 // ⚠️ SERVER-ONLY. A secret key ignora RLS — ela nunca pode vazar pro browser.
 // O ERP inteiro acessa o banco por aqui; o navegador só fala com o ERP.
@@ -18,7 +19,7 @@ export const db = createClient(url, secret, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-export const BUCKET = 'assets';
+export { BUCKET };
 
 /** URL pública de um arquivo do bucket. O bundle guarda estas URLs. */
 export function urlPublica(caminho: string): string {
